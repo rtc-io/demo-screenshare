@@ -15,15 +15,7 @@ function sendScreen(roomId) {
     chrome.webstore.install();
   }});
 
-  // detect whether the screenshare plugin is available and matches
-  // the required version
-  screenshare.available(function(err, version) {
-    var actions = document.getElementById('actions');
-
-    if (err) {
-      return actions.appendChild(buttons.install);
-    }
-
+  function captureScreen() {
     screenshare.request(function(err, constraints) {
       if (err) {
         return console.error('Could not capture window: ', err);
@@ -42,16 +34,22 @@ function sendScreen(roomId) {
         ]));
       });
     });
+  }
+
+  // detect whether the screenshare plugin is available and matches
+  // the required version
+  screenshare.available(function(err, version) {
+    var actions = document.getElementById('actions');
+
+    if (err) {
+      return actions.appendChild(installButton);
+    }
+
+    captureScreen();
   });
 
   // on install show the capture button and remove the install button if active
-  screenshare.on('activate', function() {
-    if (buttons.install.parentNode) {
-      buttons.install.parentNode.removeChild(buttons.install);
-    }
-
-    document.getElementById('actions').appendChild(buttons.capture);
-  });
+  screenshare.on('activate', captureScreen);
 }
 
 function receiveScreen(targetRoom) {
