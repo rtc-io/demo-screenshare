@@ -368,6 +368,7 @@ var places = require('random-name/places.json');
 var quickconnect = require('rtc-quickconnect');
 var attach = require('attachmediastream');
 var getUserMedia = require('getusermedia');
+var freeice = require('freeice');
 var screenshare = require('rtc-screenshare')({
   chromeExtension: 'rtc.io screenshare',
   version: '^1.0.0'
@@ -392,7 +393,7 @@ function sendScreen(roomId) {
           return console.error('could not capture stream: ', err);
         }
 
-        quickconnect(SIGNALHOST, { room: 'screeny:' + roomId }).addStream(stream);
+        quickconnect(SIGNALHOST, { iceServers: freeice(), room: 'screeny:' + roomId }).addStream(stream);
         document.body.appendChild(h('div', [
           h('div', 'Screen share URL:'),
           h('pre', location.href + '#' + roomId)
@@ -416,7 +417,7 @@ function sendScreen(roomId) {
 }
 
 function receiveScreen(targetRoom) {
-  quickconnect(SIGNALHOST, { room: 'screeny:' + targetRoom })
+  quickconnect(SIGNALHOST, { iceServers: freeice(), room: 'screeny:' + targetRoom })
   .on('call:started', function(id, pc) {
     pc.getRemoteStreams().map(attach).forEach(function(el) {
       document.body.appendChild(el);
@@ -431,7 +432,7 @@ else {
   sendScreen(places[Math.random() * places.length | 0].toLowerCase());
 }
 
-},{"attachmediastream":5,"getusermedia":6,"hyperscript":7,"random-name/places.json":11,"rtc-quickconnect":12,"rtc-screenshare":66}],5:[function(require,module,exports){
+},{"attachmediastream":5,"freeice":6,"getusermedia":10,"hyperscript":11,"random-name/places.json":15,"rtc-quickconnect":16,"rtc-screenshare":70}],5:[function(require,module,exports){
 module.exports = function (stream, el, options) {
     var item;
     var URL = window.URL;
@@ -480,6 +481,192 @@ module.exports = function (stream, el, options) {
 };
 
 },{}],6:[function(require,module,exports){
+/* jshint node: true */
+'use strict';
+
+var normalice = require('normalice');
+
+/**
+  # freeice
+
+  The `freeice` module is a simple way of getting random STUN or TURN server
+  for your WebRTC application.  The list of servers (just STUN at this stage)
+  were sourced from this [gist](https://gist.github.com/zziuni/3741933).
+
+  ## Example Use
+
+  The following demonstrates how you can use `freeice` with
+  [rtc-quickconnect](https://github.com/rtc-io/rtc-quickconnect):
+
+  <<< examples/quickconnect.js
+
+  As the `freeice` module generates ice servers in a list compliant with the
+  WebRTC spec you will be able to use it with raw `RTCPeerConnection`
+  constructors and other WebRTC libraries.
+
+  ## Hey, don't use my STUN/TURN server!
+
+  If for some reason your free STUN or TURN server ends up in the
+  list of servers ([stun](https://github.com/DamonOehlman/freeice/blob/master/stun.json) or
+  [turn](https://github.com/DamonOehlman/freeice/blob/master/turn.json))
+  that is used in this module, you can feel
+  free to open an issue on this repository and those servers will be removed
+  within 24 hours (or sooner).  This is the quickest and probably the most
+  polite way to have something removed (and provides us some visibility
+  if someone opens a pull request requesting that a server is added).
+
+  ## Please add my server!
+
+  If you have a server that you wish to add to the list, that's awesome! I'm
+  sure I speak on behalf of a whole pile of WebRTC developers who say thanks.
+  To get it into the list, feel free to either open a pull request or if you
+  find that process a bit daunting then just create an issue requesting
+  the addition of the server (make sure you provide all the details, and if
+  you have a Terms of Service then including that in the PR/issue would be
+  awesome).
+
+  ## I know of a free server, can I add it?
+
+  Sure, if you do your homework and make sure it is ok to use (I'm currently
+  in the process of reviewing the terms of those STUN servers included from
+  the original list).  If it's ok to go, then please see the previous entry
+  for how to add it.
+
+  ## Current List of Servers
+
+  * current as at the time of last `README.md` file generation
+
+  ### STUN
+
+  <<< stun.json
+
+  ### TURN
+
+  <<< turn.json
+
+**/
+
+var freeice = module.exports = function(opts) {
+  // if a list of servers has been provided, then use it instead of defaults
+  var servers = {
+    stun: (opts || {}).stun || require('./stun.json'),
+    turn: (opts || {}).turn || require('./turn.json')
+  };
+
+  var stunCount = (opts || {}).stunCount || 2;
+  var turnCount = (opts || {}).turnCount || 0;
+  var selected;
+
+  function getServers(type, count) {
+    var out = [];
+    var input = [].concat(servers[type]);
+    var idx;
+
+    while (input.length && out.length < count) {
+      idx = (Math.random() * input.length) | 0;
+      out = out.concat(input.splice(idx, 1));
+    }
+
+    return out.map(function(url) {
+      return normalice(type + ':' + url);
+    });
+  }
+
+  // add stun servers
+  selected = [].concat(getServers('stun', stunCount));
+
+  if (turnCount) {
+    selected = selected.concat(getServers('turn', turnCount));
+  }
+
+  return selected;
+};
+
+},{"./stun.json":8,"./turn.json":9,"normalice":7}],7:[function(require,module,exports){
+/**
+  # normalice
+
+  Normalize an ice server configuration object (or plain old string) into a format
+  that is usable in all browsers supporting WebRTC.  Primarily this module is designed
+  to help with the transition of the `url` attribute of the configuration object to
+  the `urls` attribute.
+
+  ## Example Usage
+
+  <<< examples/simple.js
+
+**/
+
+var protocols = [
+  'stun:',
+  'turn:'
+];
+
+module.exports = function(input) {
+  var url = (input || {}).url || input;
+  var protocol;
+  var parts;
+  var output = {};
+
+  // if we don't have a string url, then allow the input to passthrough
+  if (typeof url != 'string' && (! (url instanceof String))) {
+    return input;
+  }
+
+  // trim the url string, and convert to an array
+  url = url.trim();
+
+  // if the protocol is not known, then passthrough
+  protocol = protocols[protocols.indexOf(url.slice(0, 5))];
+  if (! protocol) {
+    return input;
+  }
+
+  // now let's attack the remaining url parts
+  url = url.slice(5);
+  parts = url.split('@');
+
+  output.username = input.username;
+  output.credential = input.credential;
+  // if we have an authentication part, then set the credentials
+  if (parts.length > 1) {
+    url = parts[1];
+    parts = parts[0].split(':');
+
+    // add the output credential and username
+    output.username = parts[0];
+    output.credential = (input || {}).credential || parts[1] || '';
+  }
+
+  output.url = protocol + url;
+  output.urls = [ output.url ];
+
+  return output;
+};
+
+},{}],8:[function(require,module,exports){
+module.exports=[
+  "stun.l.google.com:19302",
+  "stun1.l.google.com:19302",
+  "stun2.l.google.com:19302",
+  "stun3.l.google.com:19302",
+  "stun4.l.google.com:19302",
+  "stun.ekiga.net",
+  "stun.ideasip.com",
+  "stun.rixtelecom.se",
+  "stun.schlund.de",
+  "stun.stunprotocol.org:3478",
+  "stun.voiparound.com",
+  "stun.voipbuster.com",
+  "stun.voipstunt.com",
+  "stun.voxgratia.org",
+  "stun.services.mozilla.com"
+]
+
+},{}],9:[function(require,module,exports){
+module.exports=[]
+
+},{}],10:[function(require,module,exports){
 // getUserMedia helper by @HenrikJoreteg
 var func = (window.navigator.getUserMedia ||
             window.navigator.webkitGetUserMedia ||
@@ -574,7 +761,7 @@ module.exports = function (constraints, cb) {
     });
 };
 
-},{}],7:[function(require,module,exports){
+},{}],11:[function(require,module,exports){
 var split = require('browser-split')
 var ClassList = require('class-list')
 require('html-element')
@@ -721,7 +908,7 @@ function isArray (arr) {
   return Object.prototype.toString.call(arr) == '[object Array]'
 }
 
-},{"browser-split":8,"class-list":9,"html-element":1}],8:[function(require,module,exports){
+},{"browser-split":12,"class-list":13,"html-element":1}],12:[function(require,module,exports){
 /*!
  * Cross-Browser Split 1.1.1
  * Copyright 2007-2012 Steven Levithan <stevenlevithan.com>
@@ -829,7 +1016,7 @@ module.exports = (function split(undef) {
   return self;
 })();
 
-},{}],9:[function(require,module,exports){
+},{}],13:[function(require,module,exports){
 // contains, add, remove, toggle
 var indexof = require('indexof')
 
@@ -930,7 +1117,7 @@ function isTruthy(value) {
     return !!value
 }
 
-},{"indexof":10}],10:[function(require,module,exports){
+},{"indexof":14}],14:[function(require,module,exports){
 
 var indexOf = [].indexOf;
 
@@ -941,7 +1128,7 @@ module.exports = function(arr, obj){
   }
   return -1;
 };
-},{}],11:[function(require,module,exports){
+},{}],15:[function(require,module,exports){
 module.exports=[
 "Aaronsburg"
 ,
@@ -21336,7 +21523,7 @@ module.exports=[
 "Zwolle"
 ]
 
-},{}],12:[function(require,module,exports){
+},{}],16:[function(require,module,exports){
 (function (process){
 /* jshint node: true */
 'use strict';
@@ -22202,7 +22389,7 @@ module.exports = function(signalhost, opts) {
 };
 
 }).call(this,require('_process'))
-},{"./messenger":13,"_process":3,"cog/defaults":14,"cog/extend":15,"cog/getable":16,"mbus":20,"rtc-core/genice":24,"rtc-core/plugin":26,"rtc-signaller":30,"rtc-tools":59,"rtc-tools/cleanup":55}],13:[function(require,module,exports){
+},{"./messenger":17,"_process":3,"cog/defaults":18,"cog/extend":19,"cog/getable":20,"mbus":24,"rtc-core/genice":28,"rtc-core/plugin":30,"rtc-signaller":34,"rtc-tools":63,"rtc-tools/cleanup":59}],17:[function(require,module,exports){
 module.exports = function(messenger) {
   if (typeof messenger == 'function') {
     return messenger;
@@ -22211,7 +22398,7 @@ module.exports = function(messenger) {
   return require('rtc-switchboard-messenger')(messenger);
 };
 
-},{"rtc-switchboard-messenger":46}],14:[function(require,module,exports){
+},{"rtc-switchboard-messenger":50}],18:[function(require,module,exports){
 /* jshint node: true */
 'use strict';
 
@@ -22253,7 +22440,7 @@ module.exports = function(target) {
 
   return target;
 };
-},{}],15:[function(require,module,exports){
+},{}],19:[function(require,module,exports){
 /* jshint node: true */
 'use strict';
 
@@ -22288,7 +22475,7 @@ module.exports = function(target) {
 
   return target;
 };
-},{}],16:[function(require,module,exports){
+},{}],20:[function(require,module,exports){
 /**
   ## cog/getable
 
@@ -22333,7 +22520,7 @@ module.exports = function(target) {
   };
 };
 
-},{}],17:[function(require,module,exports){
+},{}],21:[function(require,module,exports){
 /* jshint node: true */
 'use strict';
 
@@ -22399,7 +22586,7 @@ module.exports = function(input) {
 
   return reNumeric.test(input) ? parseFloat(input) : input;
 };
-},{}],18:[function(require,module,exports){
+},{}],22:[function(require,module,exports){
 /* jshint node: true */
 'use strict';
 
@@ -22534,7 +22721,7 @@ logger.enable = function() {
 
   return logger;
 };
-},{}],19:[function(require,module,exports){
+},{}],23:[function(require,module,exports){
 /* jshint node: true */
 'use strict';
 
@@ -22587,7 +22774,7 @@ module.exports = function(fn, delay, opts) {
     fn.apply(this, arguments);
   };
 };
-},{}],20:[function(require,module,exports){
+},{}],24:[function(require,module,exports){
 var createTrie = require('array-trie');
 var reDelim = /[\.\:]/;
 
@@ -22756,7 +22943,7 @@ var createBus = module.exports = function(namespace, parent, scope) {
   return bus;
 };
 
-},{"array-trie":22}],21:[function(require,module,exports){
+},{"array-trie":26}],25:[function(require,module,exports){
 "use strict"
 
 function compileSearch(funcName, predicate, reversed, extraArgs, useNdarray, earlyOut) {
@@ -22818,7 +23005,7 @@ module.exports = {
   eq: compileBoundsSearch("-", true, "EQ", true)
 }
 
-},{}],22:[function(require,module,exports){
+},{}],26:[function(require,module,exports){
 "use strict"
 
 var bounds = require("binary-search-bounds")
@@ -22906,7 +23093,7 @@ proto.get = function(s) {
 function createTrie() {
   return new Trie([],[])
 }
-},{"binary-search-bounds":21}],23:[function(require,module,exports){
+},{"binary-search-bounds":25}],27:[function(require,module,exports){
 /* jshint node: true */
 /* global window: false */
 /* global navigator: false */
@@ -22983,7 +23170,7 @@ detect.moz = typeof navigator != 'undefined' && !!navigator.mozGetUserMedia;
 detect.browser = browser.name;
 detect.browserVersion = detect.version = browser.version;
 
-},{"detect-browser":25}],24:[function(require,module,exports){
+},{"detect-browser":29}],28:[function(require,module,exports){
 /**
   ### `rtc-core/genice`
 
@@ -23015,7 +23202,7 @@ module.exports = function(opts, callback) {
   callback(null, [].concat(iceServers || []));
 };
 
-},{}],25:[function(require,module,exports){
+},{}],29:[function(require,module,exports){
 var browsers = [
   [ 'chrome', /Chrom(?:e|ium)\/([0-9\.]+)(:?\s|$)/ ],
   [ 'firefox', /Firefox\/([0-9\.]+)(?:\s|$)/ ],
@@ -23049,7 +23236,7 @@ function isMatch(pair) {
   return !!pair[2];
 }
 
-},{}],26:[function(require,module,exports){
+},{}],30:[function(require,module,exports){
 var detect = require('./detect');
 var requiredFunctions = [
   'init'
@@ -23071,7 +23258,7 @@ module.exports = function(plugins) {
   return [].concat(plugins || []).filter(isSupported).filter(isValid)[0];
 }
 
-},{"./detect":23}],27:[function(require,module,exports){
+},{"./detect":27}],31:[function(require,module,exports){
 module.exports = {
   // messenger events
   dataEvent: 'data',
@@ -23087,7 +23274,7 @@ module.exports = {
   leaveTimeout: 3000
 };
 
-},{}],28:[function(require,module,exports){
+},{}],32:[function(require,module,exports){
 /* jshint node: true */
 'use strict';
 
@@ -23174,7 +23361,7 @@ module.exports = function(signaller) {
   };
 };
 
-},{"cog/extend":15}],29:[function(require,module,exports){
+},{"cog/extend":19}],33:[function(require,module,exports){
 /* jshint node: true */
 'use strict';
 
@@ -23189,7 +23376,7 @@ module.exports = function(signaller, opts) {
   };
 };
 
-},{"./announce":28}],30:[function(require,module,exports){
+},{"./announce":32}],34:[function(require,module,exports){
 /* jshint node: true */
 'use strict';
 
@@ -23626,7 +23813,7 @@ module.exports = function(messenger, opts) {
   return signaller;
 };
 
-},{"./defaults":27,"./processor":45,"cog/defaults":14,"cog/extend":15,"cog/getable":16,"cuid":31,"mbus":20,"pull-pushable":32,"pull-stream":39,"rtc-core/detect":23}],31:[function(require,module,exports){
+},{"./defaults":31,"./processor":49,"cog/defaults":18,"cog/extend":19,"cog/getable":20,"cuid":35,"mbus":24,"pull-pushable":36,"pull-stream":43,"rtc-core/detect":27}],35:[function(require,module,exports){
 /**
  * cuid.js
  * Collision-resistant UID generator for browsers and node.
@@ -23738,7 +23925,7 @@ module.exports = function(messenger, opts) {
 
 }(this.applitude || this));
 
-},{}],32:[function(require,module,exports){
+},{}],36:[function(require,module,exports){
 var pull = require('pull-stream')
 
 module.exports = pull.Source(function (onClose) {
@@ -23783,7 +23970,7 @@ module.exports = pull.Source(function (onClose) {
 })
 
 
-},{"pull-stream":33}],33:[function(require,module,exports){
+},{"pull-stream":37}],37:[function(require,module,exports){
 
 var sources  = require('./sources')
 var sinks    = require('./sinks')
@@ -23811,7 +23998,7 @@ exports.Sink    = exports.pipeableSink   = u.Sink
 
 
 
-},{"./maybe":34,"./sinks":36,"./sources":37,"./throughs":38,"pull-core":35}],34:[function(require,module,exports){
+},{"./maybe":38,"./sinks":40,"./sources":41,"./throughs":42,"pull-core":39}],38:[function(require,module,exports){
 var u = require('pull-core')
 var prop = u.prop
 var id   = u.id
@@ -23869,7 +24056,7 @@ module.exports = function (pull) {
   return exports
 }
 
-},{"pull-core":35}],35:[function(require,module,exports){
+},{"pull-core":39}],39:[function(require,module,exports){
 exports.id = 
 function (item) {
   return item
@@ -23986,7 +24173,7 @@ function (createSink, cb) {
 }
 
 
-},{}],36:[function(require,module,exports){
+},{}],40:[function(require,module,exports){
 var drain = exports.drain = function (read, op, done) {
 
   ;(function next() {
@@ -24026,7 +24213,7 @@ var log = exports.log = function (read, done) {
 }
 
 
-},{}],37:[function(require,module,exports){
+},{}],41:[function(require,module,exports){
 
 var keys = exports.keys =
 function (object) {
@@ -24178,7 +24365,7 @@ function (start, createStream) {
 }
 
 
-},{}],38:[function(require,module,exports){
+},{}],42:[function(require,module,exports){
 (function (process){
 var u      = require('pull-core')
 var sources = require('./sources')
@@ -24474,7 +24661,7 @@ function (read, highWaterMark) {
 
 
 }).call(this,require('_process'))
-},{"./sinks":36,"./sources":37,"_process":3,"pull-core":35}],39:[function(require,module,exports){
+},{"./sinks":40,"./sources":41,"_process":3,"pull-core":39}],43:[function(require,module,exports){
 var sources  = require('./sources')
 var sinks    = require('./sinks')
 var throughs = require('./throughs')
@@ -24550,7 +24737,7 @@ exports.Sink    = exports.pipeableSink   = u.Sink
 
 
 
-},{"./maybe":40,"./sinks":42,"./sources":43,"./throughs":44,"pull-core":41}],40:[function(require,module,exports){
+},{"./maybe":44,"./sinks":46,"./sources":47,"./throughs":48,"pull-core":45}],44:[function(require,module,exports){
 var u = require('pull-core')
 var prop = u.prop
 var id   = u.id
@@ -24615,9 +24802,9 @@ module.exports = function (pull) {
   return exports
 }
 
-},{"pull-core":41}],41:[function(require,module,exports){
-arguments[4][35][0].apply(exports,arguments)
-},{"dup":35}],42:[function(require,module,exports){
+},{"pull-core":45}],45:[function(require,module,exports){
+arguments[4][39][0].apply(exports,arguments)
+},{"dup":39}],46:[function(require,module,exports){
 var drain = exports.drain = function (read, op, done) {
 
   ;(function next() {
@@ -24659,7 +24846,7 @@ var log = exports.log = function (read, done) {
 }
 
 
-},{}],43:[function(require,module,exports){
+},{}],47:[function(require,module,exports){
 
 var keys = exports.keys =
 function (object) {
@@ -24817,7 +25004,7 @@ function (start, createStream) {
 }
 
 
-},{}],44:[function(require,module,exports){
+},{}],48:[function(require,module,exports){
 (function (process){
 var u      = require('pull-core')
 var sources = require('./sources')
@@ -25148,7 +25335,7 @@ function (read, mapper) {
 
 
 }).call(this,require('_process'))
-},{"./sinks":42,"./sources":43,"_process":3,"pull-core":41}],45:[function(require,module,exports){
+},{"./sinks":46,"./sources":47,"_process":3,"pull-core":45}],49:[function(require,module,exports){
 /* jshint node: true */
 'use strict';
 
@@ -25275,7 +25462,7 @@ module.exports = function(signaller, opts) {
   };
 };
 
-},{"./handlers":29,"cog/jsonparse":17}],46:[function(require,module,exports){
+},{"./handlers":33,"cog/jsonparse":21}],50:[function(require,module,exports){
 var extend = require('cog/extend');
 
 /**
@@ -25293,7 +25480,7 @@ module.exports = function(switchboard, opts) {
   }, opts));
 };
 
-},{"cog/extend":15,"messenger-ws":47}],47:[function(require,module,exports){
+},{"cog/extend":19,"messenger-ws":51}],51:[function(require,module,exports){
 var WebSocket = require('ws');
 var wsurl = require('wsurl');
 var ps = require('pull-ws');
@@ -25378,7 +25565,7 @@ module.exports = function(url, opts) {
   return connect;
 };
 
-},{"cog/defaults":14,"pull-ws":48,"ws":53,"wsurl":54}],48:[function(require,module,exports){
+},{"cog/defaults":18,"pull-ws":52,"ws":57,"wsurl":58}],52:[function(require,module,exports){
 exports = module.exports = duplex;
 
 exports.source = require('./source');
@@ -25391,7 +25578,7 @@ function duplex (ws, opts) {
   };
 };
 
-},{"./sink":51,"./source":52}],49:[function(require,module,exports){
+},{"./sink":55,"./source":56}],53:[function(require,module,exports){
 exports.id = 
 function (item) {
   return item
@@ -25510,7 +25697,7 @@ function (createSink, cb) {
 }
 
 
-},{}],50:[function(require,module,exports){
+},{}],54:[function(require,module,exports){
 module.exports = function(socket, callback) {
   var remove = socket && (socket.removeEventListener || socket.removeListener);
 
@@ -25543,7 +25730,7 @@ module.exports = function(socket, callback) {
   socket.addEventListener('error', handleErr);
 };
 
-},{}],51:[function(require,module,exports){
+},{}],55:[function(require,module,exports){
 (function (process){
 var pull = require('pull-core');
 var ready = require('./ready');
@@ -25598,7 +25785,7 @@ module.exports = pull.Sink(function(read, socket, opts) {
 });
 
 }).call(this,require('_process'))
-},{"./ready":50,"_process":3,"pull-core":49}],52:[function(require,module,exports){
+},{"./ready":54,"_process":3,"pull-core":53}],56:[function(require,module,exports){
 var pull = require('pull-core');
 var ready = require('./ready');
 
@@ -25675,7 +25862,7 @@ module.exports = pull.Source(function(socket) {
   return read;
 });
 
-},{"./ready":50,"pull-core":49}],53:[function(require,module,exports){
+},{"./ready":54,"pull-core":53}],57:[function(require,module,exports){
 
 /**
  * Module dependencies.
@@ -25720,7 +25907,7 @@ function ws(uri, protocols, opts) {
 
 if (WebSocket) ws.prototype = WebSocket.prototype;
 
-},{}],54:[function(require,module,exports){
+},{}],58:[function(require,module,exports){
 var reHttpUrl = /^http(.*)$/;
 
 /**
@@ -25751,7 +25938,7 @@ module.exports = function(url, opts) {
   return url.replace(reHttpUrl, 'ws$1');
 };
 
-},{}],55:[function(require,module,exports){
+},{}],59:[function(require,module,exports){
 /* jshint node: true */
 'use strict';
 
@@ -25814,7 +26001,7 @@ module.exports = function(pc) {
   }, 100);
 };
 
-},{"cog/logger":18}],56:[function(require,module,exports){
+},{"cog/logger":22}],60:[function(require,module,exports){
 /* jshint node: true */
 'use strict';
 
@@ -26047,7 +26234,7 @@ function couple(pc, targetId, signaller, opts) {
 
 module.exports = couple;
 
-},{"./cleanup":55,"./monitor":60,"cog/logger":18,"cog/throttle":19,"mbus":20,"rtc-taskqueue":61}],57:[function(require,module,exports){
+},{"./cleanup":59,"./monitor":64,"cog/logger":22,"cog/throttle":23,"mbus":24,"rtc-taskqueue":65}],61:[function(require,module,exports){
 /* jshint node: true */
 'use strict';
 
@@ -26059,7 +26246,7 @@ module.exports = couple;
 **/
 module.exports = require('rtc-core/detect');
 
-},{"rtc-core/detect":23}],58:[function(require,module,exports){
+},{"rtc-core/detect":27}],62:[function(require,module,exports){
 /* jshint node: true */
 'use strict';
 
@@ -26148,7 +26335,7 @@ exports.connectionConstraints = function(flags, constraints) {
   return out;
 };
 
-},{"./detect":57,"cog/defaults":14,"cog/logger":18}],59:[function(require,module,exports){
+},{"./detect":61,"cog/defaults":18,"cog/logger":22}],63:[function(require,module,exports){
 /* jshint node: true */
 
 'use strict';
@@ -26239,7 +26426,7 @@ exports.createConnection = function(opts, constraints) {
   return new PeerConnection(config, constraints);
 };
 
-},{"./couple":56,"./detect":57,"./generators":58,"cog/logger":18,"rtc-core/plugin":26}],60:[function(require,module,exports){
+},{"./couple":60,"./detect":61,"./generators":62,"cog/logger":22,"rtc-core/plugin":30}],64:[function(require,module,exports){
 /* jshint node: true */
 'use strict';
 
@@ -26329,7 +26516,7 @@ function getMappedState(state) {
   return stateMappings[state] || state;
 }
 
-},{"mbus":20}],61:[function(require,module,exports){
+},{"mbus":24}],65:[function(require,module,exports){
 var detect = require('rtc-core/detect');
 var findPlugin = require('rtc-core/plugin');
 var PriorityQueue = require('priorityqueuejs');
@@ -26676,7 +26863,7 @@ module.exports = function(pc, opts) {
   return tq;
 };
 
-},{"mbus":20,"priorityqueuejs":62,"rtc-core/detect":23,"rtc-core/plugin":26,"rtc-sdpclean":63,"rtc-validator/candidate":64}],62:[function(require,module,exports){
+},{"mbus":24,"priorityqueuejs":66,"rtc-core/detect":27,"rtc-core/plugin":30,"rtc-sdpclean":67,"rtc-validator/candidate":68}],66:[function(require,module,exports){
 /**
  * Expose `PriorityQueue`.
  */
@@ -26850,7 +27037,7 @@ PriorityQueue.prototype._swap = function(a, b) {
   this._elements[b] = aux;
 };
 
-},{}],63:[function(require,module,exports){
+},{}],67:[function(require,module,exports){
 var validators = [
   [ /^(a\=candidate.*)$/, require('rtc-validator/candidate') ]
 ];
@@ -26907,7 +27094,7 @@ function detectLineBreak(input) {
   return match && match[0];
 }
 
-},{"rtc-validator/candidate":64}],64:[function(require,module,exports){
+},{"rtc-validator/candidate":68}],68:[function(require,module,exports){
 var debug = require('cog/logger')('rtc-validator');
 var rePrefix = /^(?:a=)?candidate:/;
 var reIP = /^(\d+\.){3}\d+$/;
@@ -26994,7 +27181,7 @@ function validateParts(part, idx) {
   }
 }
 
-},{"cog/logger":18}],65:[function(require,module,exports){
+},{"cog/logger":22}],69:[function(require,module,exports){
 var extend = require('cog/extend');
 var OPT_DEFAULTS = {
   target: 'rtc.io screenshare'
@@ -27042,7 +27229,7 @@ module.exports = function(opts) {
   return extension;
 };
 
-},{"chromex/client":68,"cog/extend":75}],66:[function(require,module,exports){
+},{"chromex/client":72,"cog/extend":79}],70:[function(require,module,exports){
 var detect = require('rtc-core/detect');
 
 /**
@@ -27082,7 +27269,7 @@ var detect = require('rtc-core/detect');
 **/
 module.exports = (detect.moz ? require('./moz') : require('./chrome'));
 
-},{"./chrome":65,"./moz":67,"rtc-core/detect":76}],67:[function(require,module,exports){
+},{"./chrome":69,"./moz":71,"rtc-core/detect":80}],71:[function(require,module,exports){
 var targets = {};
 
 targets.window = function(callback) {
@@ -27105,7 +27292,7 @@ module.exports = function(target, callback) {
   return capture(callback);
 };
 
-},{}],68:[function(require,module,exports){
+},{}],72:[function(require,module,exports){
 var defaults = require('cog/defaults');
 var slimver = require('slimver');
 var EventEmitter = require('eventemitter3');
@@ -27224,9 +27411,9 @@ module.exports = function(opts) {
   return extension;
 };
 
-},{"cog/defaults":74,"cuid":69,"eventemitter3":70,"kgo":71,"slimver":73}],69:[function(require,module,exports){
-arguments[4][31][0].apply(exports,arguments)
-},{"dup":31}],70:[function(require,module,exports){
+},{"cog/defaults":78,"cuid":73,"eventemitter3":74,"kgo":75,"slimver":77}],73:[function(require,module,exports){
+arguments[4][35][0].apply(exports,arguments)
+},{"dup":35}],74:[function(require,module,exports){
 'use strict';
 
 /**
@@ -27457,7 +27644,7 @@ EventEmitter.EventEmitter3 = EventEmitter;
 //
 module.exports = EventEmitter;
 
-},{}],71:[function(require,module,exports){
+},{}],75:[function(require,module,exports){
 var run = require('./run'),
     EventEmitter = require('events').EventEmitter,
     fnRegex = /^function.*?\((.*?)\)/;
@@ -27551,7 +27738,7 @@ function newKgo(){
 }
 
 module.exports = newKgo;
-},{"./run":72,"events":2}],72:[function(require,module,exports){
+},{"./run":76,"events":2}],76:[function(require,module,exports){
 var ignoreDependency = /^\!.+/;
 
 function rotate90(array){
@@ -27666,7 +27853,7 @@ function cloneAndRun(tasks, results, emitter){
 }
 
 module.exports = cloneAndRun;
-},{}],73:[function(require,module,exports){
+},{}],77:[function(require,module,exports){
 var OFFSET = Math.pow(2, 16);
 var MAXSEG = OFFSET - 1;
 var MAXVER = Math.pow(OFFSET, 3) - 1;
@@ -27851,12 +28038,12 @@ slim.unpack = slim.stringify = unpack;
 
 module.exports = slim;
 
-},{}],74:[function(require,module,exports){
-arguments[4][14][0].apply(exports,arguments)
-},{"dup":14}],75:[function(require,module,exports){
-arguments[4][15][0].apply(exports,arguments)
-},{"dup":15}],76:[function(require,module,exports){
-arguments[4][23][0].apply(exports,arguments)
-},{"detect-browser":77,"dup":23}],77:[function(require,module,exports){
-arguments[4][25][0].apply(exports,arguments)
-},{"dup":25}]},{},[4]);
+},{}],78:[function(require,module,exports){
+arguments[4][18][0].apply(exports,arguments)
+},{"dup":18}],79:[function(require,module,exports){
+arguments[4][19][0].apply(exports,arguments)
+},{"dup":19}],80:[function(require,module,exports){
+arguments[4][27][0].apply(exports,arguments)
+},{"detect-browser":81,"dup":27}],81:[function(require,module,exports){
+arguments[4][29][0].apply(exports,arguments)
+},{"dup":29}]},{},[4]);

@@ -3,6 +3,7 @@ var places = require('random-name/places.json');
 var quickconnect = require('rtc-quickconnect');
 var attach = require('attachmediastream');
 var getUserMedia = require('getusermedia');
+var freeice = require('freeice');
 var screenshare = require('rtc-screenshare')({
   chromeExtension: 'rtc.io screenshare',
   version: '^1.0.0'
@@ -27,7 +28,7 @@ function sendScreen(roomId) {
           return console.error('could not capture stream: ', err);
         }
 
-        quickconnect(SIGNALHOST, { room: 'screeny:' + roomId }).addStream(stream);
+        quickconnect(SIGNALHOST, { iceServers: freeice(), room: 'screeny:' + roomId }).addStream(stream);
         document.body.appendChild(h('div', [
           h('div', 'Screen share URL:'),
           h('pre', location.href + '#' + roomId)
@@ -51,7 +52,7 @@ function sendScreen(roomId) {
 }
 
 function receiveScreen(targetRoom) {
-  quickconnect(SIGNALHOST, { room: 'screeny:' + targetRoom })
+  quickconnect(SIGNALHOST, { iceServers: freeice(), room: 'screeny:' + targetRoom })
   .on('call:started', function(id, pc) {
     pc.getRemoteStreams().map(attach).forEach(function(el) {
       document.body.appendChild(el);
