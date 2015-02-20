@@ -19,9 +19,9 @@
   "homepage": "https://github.com/rtc-io/demo-screenshare",
   "dependencies": {
     "attachmediastream": "^1.1.0",
-    "cuid": "^1.2.4",
     "getusermedia": "^1.2.0",
     "hyperscript": "^1.4.4",
+    "random-name": "^0.1.0",
     "rtc-quickconnect": "^4.1.2",
     "rtc-screenshare": "^3.0.0"
   }

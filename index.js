@@ -1,5 +1,5 @@
 var SIGNALHOST = 'https://switchboard.rtc.io';
-var cuid = require('cuid');
+var places = require('random-name/places.json');
 var quickconnect = require('rtc-quickconnect');
 var attach = require('attachmediastream');
 var getUserMedia = require('getusermedia');
@@ -63,5 +63,5 @@ if (targetRoom) {
   receiveScreen(targetRoom);
 }
 else {
-  sendScreen(cuid());
+  sendScreen(places[Math.random() * places.length | 0].toLowerCase());
 }
