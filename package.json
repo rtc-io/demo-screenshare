@@ -1,0 +1,28 @@
+{
+  "name": "demo-screenshare",
+  "version": "1.0.0",
+  "description": "A simple rtc.io screenshare demo which broadcasts your screen to a remote endpoint for display",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "bundle": "browserify index.js > bundle.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/rtc-io/demo-screenshare.git"
+  },
+  "author": "Damon Oehlman <damon.oehlman@nicta.com.au>",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/rtc-io/demo-screenshare/issues"
+  },
+  "homepage": "https://github.com/rtc-io/demo-screenshare",
+  "dependencies": {
+    "attachmediastream": "^1.1.0",
+    "cuid": "^1.2.4",
+    "getusermedia": "^1.2.0",
+    "hyperscript": "^1.4.4",
+    "rtc-quickconnect": "^4.1.2",
+    "rtc-screenshare": "^3.0.0"
+  }
+}
