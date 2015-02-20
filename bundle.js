@@ -405,16 +405,14 @@ function sendScreen(roomId) {
   // the required version
   screenshare.available(function(err, version) {
     var actions = document.getElementById('actions');
-
     if (err) {
+      // on install show the capture button and remove the install button if active
+      screenshare.on('activate', captureScreen);
       return actions.appendChild(installButton);
     }
 
     captureScreen();
   });
-
-  // on install show the capture button and remove the install button if active
-  screenshare.on('activate', captureScreen);
 }
 
 function receiveScreen(targetRoom) {
