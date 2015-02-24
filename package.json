@@ -5,6 +5,7 @@
   "main": "index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "rm -rf bundle.js && beefy index.js:bundle.js",
     "bundle": "browserify index.js > bundle.js"
   },
   "repository": {
@@ -19,6 +20,7 @@
   "homepage": "https://github.com/rtc-io/demo-screenshare",
   "dependencies": {
     "attachmediastream": "^1.1.0",
+    "fdom": "^1.2.0",
     "freeice": "^2.1.2",
     "getusermedia": "^1.2.0",
     "hyperscript": "^1.4.4",

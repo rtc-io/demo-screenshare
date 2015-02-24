@@ -4,6 +4,7 @@ var quickconnect = require('rtc-quickconnect');
 var attach = require('attachmediastream');
 var getUserMedia = require('getusermedia');
 var freeice = require('freeice');
+var qsa = require('fdom/qsa');
 var screenshare = require('rtc-screenshare')({
   chromeExtension: 'rtc.io screenshare',
   version: '^1.0.0'
@@ -12,12 +13,23 @@ var targetRoom = location.hash.slice(1);
 var h = require('hyperscript');
 
 function sendScreen(roomId) {
-  var installButton = h('button', 'Install Extension', { onclick: function() {
-    chrome.webstore.install();
-  }});
+  var installButton = h('button.install', 'Install Extension', {
+    onclick: function() {
+      chrome.webstore.install();
+    }
+  });
 
   function captureScreen() {
+    status();
+
+    // remove the parent node
+    if (installButton.parentNode) {
+      installButton.parentNode.removeChild(installButton);
+    }
+
     screenshare.request(function(err, constraints) {
+      var input;
+
       if (err) {
         return console.error('Could not capture window: ', err);
       }
@@ -30,9 +42,15 @@ function sendScreen(roomId) {
 
         quickconnect(SIGNALHOST, { iceServers: freeice(), room: 'screeny:' + roomId }).addStream(stream);
         document.body.appendChild(h('div', [
-          h('div', 'Screen share URL:'),
-          h('pre', location.href + '#' + roomId)
+          input = h('input.share', {
+            type: 'text',
+            value: location.href + '#' + roomId,
+            readonly: 'readonly'
+          })
         ]));
+
+        input.select();
+        input.focus();
       });
     });
   }
@@ -53,16 +71,30 @@ function sendScreen(roomId) {
 
 function receiveScreen(targetRoom) {
   quickconnect(SIGNALHOST, { iceServers: freeice(), room: 'screeny:' + targetRoom })
+  .on('call:ended', function() {
+    qsa('video').forEach(function(el) {
+      el.parentNode.removeChild(el);
+    });
+
+    status('attaching to remote screen');
+  })
   .on('call:started', function(id, pc) {
+    status();
     pc.getRemoteStreams().map(attach).forEach(function(el) {
       document.body.appendChild(el);
     });
   });
 }
 
+function status(message) {
+  document.querySelector('#status').innerText = (message || '');
+}
+
 if (targetRoom) {
+  status('attaching to remote screen');
   receiveScreen(targetRoom);
 }
 else {
+  status('waiting to share');
   sendScreen(places[Math.random() * places.length | 0].toLowerCase());
 }

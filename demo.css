@@ -3,8 +3,35 @@ html, body {
   width: 100vw;
   height: 100vh;
   overflow: hidden;
+  background: #111;
+  color: white;
+
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  flex-direction: column;
+
+  font-family: 'Open Sans', sans-serif;
+}
+
+body > * {
+  display: flex;
+}
+
+input.share {
+  background: #ededed;
+  width: 90vw;
+  text-align: center;
+  border: 0;
+  padding: 10px;
+  border-radius: 5px;
+  font-size: 2em;
 }
 
 video {
   max-width: 100vw;
+}
+
+button.install {
+  display: block;
 }
