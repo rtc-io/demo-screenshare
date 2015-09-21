@@ -29,7 +29,6 @@ function sendScreen(roomId) {
 
     screenshare.request(function(err, constraints) {
       var input;
-
       if (err) {
         return console.error('Could not capture window: ', err);
       }
@@ -37,6 +36,15 @@ function sendScreen(roomId) {
       console.log('attempting capture with constraints: ', constraints);
       getUserMedia(constraints, function(err, stream) {
         if (err) {
+          if (screenshare.type === 'mozilla/firefox') {
+            console.log('install firefox');
+            var actions = document.getElementById('actions');
+            return actions.appendChild(
+              h('a', 'Install the Firefox extension', {
+                href: './rtc-screen-capture.xpi'
+              })
+            );
+          }
           return console.error('could not capture stream: ', err);
         }
 

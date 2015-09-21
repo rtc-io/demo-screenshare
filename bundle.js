@@ -1,368 +1,4 @@
 (function e(t,n,r){function s(o,u){if(!n[o]){if(!t[o]){var a=typeof require=="function"&&require;if(!u&&a)return a(o,!0);if(i)return i(o,!0);var f=new Error("Cannot find module '"+o+"'");throw f.code="MODULE_NOT_FOUND",f}var l=n[o]={exports:{}};t[o][0].call(l.exports,function(e){var n=t[o][1][e];return s(n?n:e)},l,l.exports,e,t,n,r)}return n[o].exports}var i=typeof require=="function"&&require;for(var o=0;o<r.length;o++)s(r[o]);return s})({1:[function(require,module,exports){
-
-},{}],2:[function(require,module,exports){
-// Copyright Joyent, Inc. and other Node contributors.
-//
-// Permission is hereby granted, free of charge, to any person obtaining a
-// copy of this software and associated documentation files (the
-// "Software"), to deal in the Software without restriction, including
-// without limitation the rights to use, copy, modify, merge, publish,
-// distribute, sublicense, and/or sell copies of the Software, and to permit
-// persons to whom the Software is furnished to do so, subject to the
-// following conditions:
-//
-// The above copyright notice and this permission notice shall be included
-// in all copies or substantial portions of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
-// OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
-// MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN
-// NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
-// DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
-// OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE
-// USE OR OTHER DEALINGS IN THE SOFTWARE.
-
-function EventEmitter() {
-  this._events = this._events || {};
-  this._maxListeners = this._maxListeners || undefined;
-}
-module.exports = EventEmitter;
-
-// Backwards-compat with node 0.10.x
-EventEmitter.EventEmitter = EventEmitter;
-
-EventEmitter.prototype._events = undefined;
-EventEmitter.prototype._maxListeners = undefined;
-
-// By default EventEmitters will print a warning if more than 10 listeners are
-// added to it. This is a useful default which helps finding memory leaks.
-EventEmitter.defaultMaxListeners = 10;
-
-// Obviously not all Emitters should be limited to 10. This function allows
-// that to be increased. Set to zero for unlimited.
-EventEmitter.prototype.setMaxListeners = function(n) {
-  if (!isNumber(n) || n < 0 || isNaN(n))
-    throw TypeError('n must be a positive number');
-  this._maxListeners = n;
-  return this;
-};
-
-EventEmitter.prototype.emit = function(type) {
-  var er, handler, len, args, i, listeners;
-
-  if (!this._events)
-    this._events = {};
-
-  // If there is no 'error' event listener then throw.
-  if (type === 'error') {
-    if (!this._events.error ||
-        (isObject(this._events.error) && !this._events.error.length)) {
-      er = arguments[1];
-      if (er instanceof Error) {
-        throw er; // Unhandled 'error' event
-      }
-      throw TypeError('Uncaught, unspecified "error" event.');
-    }
-  }
-
-  handler = this._events[type];
-
-  if (isUndefined(handler))
-    return false;
-
-  if (isFunction(handler)) {
-    switch (arguments.length) {
-      // fast cases
-      case 1:
-        handler.call(this);
-        break;
-      case 2:
-        handler.call(this, arguments[1]);
-        break;
-      case 3:
-        handler.call(this, arguments[1], arguments[2]);
-        break;
-      // slower
-      default:
-        len = arguments.length;
-        args = new Array(len - 1);
-        for (i = 1; i < len; i++)
-          args[i - 1] = arguments[i];
-        handler.apply(this, args);
-    }
-  } else if (isObject(handler)) {
-    len = arguments.length;
-    args = new Array(len - 1);
-    for (i = 1; i < len; i++)
-      args[i - 1] = arguments[i];
-
-    listeners = handler.slice();
-    len = listeners.length;
-    for (i = 0; i < len; i++)
-      listeners[i].apply(this, args);
-  }
-
-  return true;
-};
-
-EventEmitter.prototype.addListener = function(type, listener) {
-  var m;
-
-  if (!isFunction(listener))
-    throw TypeError('listener must be a function');
-
-  if (!this._events)
-    this._events = {};
-
-  // To avoid recursion in the case that type === "newListener"! Before
-  // adding it to the listeners, first emit "newListener".
-  if (this._events.newListener)
-    this.emit('newListener', type,
-              isFunction(listener.listener) ?
-              listener.listener : listener);
-
-  if (!this._events[type])
-    // Optimize the case of one listener. Don't need the extra array object.
-    this._events[type] = listener;
-  else if (isObject(this._events[type]))
-    // If we've already got an array, just append.
-    this._events[type].push(listener);
-  else
-    // Adding the second element, need to change to array.
-    this._events[type] = [this._events[type], listener];
-
-  // Check for listener leak
-  if (isObject(this._events[type]) && !this._events[type].warned) {
-    var m;
-    if (!isUndefined(this._maxListeners)) {
-      m = this._maxListeners;
-    } else {
-      m = EventEmitter.defaultMaxListeners;
-    }
-
-    if (m && m > 0 && this._events[type].length > m) {
-      this._events[type].warned = true;
-      console.error('(node) warning: possible EventEmitter memory ' +
-                    'leak detected. %d listeners added. ' +
-                    'Use emitter.setMaxListeners() to increase limit.',
-                    this._events[type].length);
-      if (typeof console.trace === 'function') {
-        // not supported in IE 10
-        console.trace();
-      }
-    }
-  }
-
-  return this;
-};
-
-EventEmitter.prototype.on = EventEmitter.prototype.addListener;
-
-EventEmitter.prototype.once = function(type, listener) {
-  if (!isFunction(listener))
-    throw TypeError('listener must be a function');
-
-  var fired = false;
-
-  function g() {
-    this.removeListener(type, g);
-
-    if (!fired) {
-      fired = true;
-      listener.apply(this, arguments);
-    }
-  }
-
-  g.listener = listener;
-  this.on(type, g);
-
-  return this;
-};
-
-// emits a 'removeListener' event iff the listener was removed
-EventEmitter.prototype.removeListener = function(type, listener) {
-  var list, position, length, i;
-
-  if (!isFunction(listener))
-    throw TypeError('listener must be a function');
-
-  if (!this._events || !this._events[type])
-    return this;
-
-  list = this._events[type];
-  length = list.length;
-  position = -1;
-
-  if (list === listener ||
-      (isFunction(list.listener) && list.listener === listener)) {
-    delete this._events[type];
-    if (this._events.removeListener)
-      this.emit('removeListener', type, listener);
-
-  } else if (isObject(list)) {
-    for (i = length; i-- > 0;) {
-      if (list[i] === listener ||
-          (list[i].listener && list[i].listener === listener)) {
-        position = i;
-        break;
-      }
-    }
-
-    if (position < 0)
-      return this;
-
-    if (list.length === 1) {
-      list.length = 0;
-      delete this._events[type];
-    } else {
-      list.splice(position, 1);
-    }
-
-    if (this._events.removeListener)
-      this.emit('removeListener', type, listener);
-  }
-
-  return this;
-};
-
-EventEmitter.prototype.removeAllListeners = function(type) {
-  var key, listeners;
-
-  if (!this._events)
-    return this;
-
-  // not listening for removeListener, no need to emit
-  if (!this._events.removeListener) {
-    if (arguments.length === 0)
-      this._events = {};
-    else if (this._events[type])
-      delete this._events[type];
-    return this;
-  }
-
-  // emit removeListener for all listeners on all events
-  if (arguments.length === 0) {
-    for (key in this._events) {
-      if (key === 'removeListener') continue;
-      this.removeAllListeners(key);
-    }
-    this.removeAllListeners('removeListener');
-    this._events = {};
-    return this;
-  }
-
-  listeners = this._events[type];
-
-  if (isFunction(listeners)) {
-    this.removeListener(type, listeners);
-  } else {
-    // LIFO order
-    while (listeners.length)
-      this.removeListener(type, listeners[listeners.length - 1]);
-  }
-  delete this._events[type];
-
-  return this;
-};
-
-EventEmitter.prototype.listeners = function(type) {
-  var ret;
-  if (!this._events || !this._events[type])
-    ret = [];
-  else if (isFunction(this._events[type]))
-    ret = [this._events[type]];
-  else
-    ret = this._events[type].slice();
-  return ret;
-};
-
-EventEmitter.listenerCount = function(emitter, type) {
-  var ret;
-  if (!emitter._events || !emitter._events[type])
-    ret = 0;
-  else if (isFunction(emitter._events[type]))
-    ret = 1;
-  else
-    ret = emitter._events[type].length;
-  return ret;
-};
-
-function isFunction(arg) {
-  return typeof arg === 'function';
-}
-
-function isNumber(arg) {
-  return typeof arg === 'number';
-}
-
-function isObject(arg) {
-  return typeof arg === 'object' && arg !== null;
-}
-
-function isUndefined(arg) {
-  return arg === void 0;
-}
-
-},{}],3:[function(require,module,exports){
-// shim for using process in browser
-
-var process = module.exports = {};
-var queue = [];
-var draining = false;
-
-function drainQueue() {
-    if (draining) {
-        return;
-    }
-    draining = true;
-    var currentQueue;
-    var len = queue.length;
-    while(len) {
-        currentQueue = queue;
-        queue = [];
-        var i = -1;
-        while (++i < len) {
-            currentQueue[i]();
-        }
-        len = queue.length;
-    }
-    draining = false;
-}
-process.nextTick = function (fun) {
-    queue.push(fun);
-    if (!draining) {
-        setTimeout(drainQueue, 0);
-    }
-};
-
-process.title = 'browser';
-process.browser = true;
-process.env = {};
-process.argv = [];
-process.version = ''; // empty string to avoid regexp issues
-
-function noop() {}
-
-process.on = noop;
-process.addListener = noop;
-process.once = noop;
-process.off = noop;
-process.removeListener = noop;
-process.removeAllListeners = noop;
-process.emit = noop;
-
-process.binding = function (name) {
-    throw new Error('process.binding is not supported');
-};
-
-// TODO(shtylman)
-process.cwd = function () { return '/' };
-process.chdir = function (dir) {
-    throw new Error('process.chdir is not supported');
-};
-process.umask = function() { return 0; };
-
-},{}],4:[function(require,module,exports){
 var SIGNALHOST = 'https://switchboard.rtc.io';
 var places = require('random-name/places.json');
 var quickconnect = require('rtc-quickconnect');
@@ -394,7 +30,6 @@ function sendScreen(roomId) {
 
     screenshare.request(function(err, constraints) {
       var input;
-
       if (err) {
         return console.error('Could not capture window: ', err);
       }
@@ -402,6 +37,15 @@ function sendScreen(roomId) {
       console.log('attempting capture with constraints: ', constraints);
       getUserMedia(constraints, function(err, stream) {
         if (err) {
+          if (screenshare.type === 'mozilla/firefox') {
+            console.log('install firefox');
+            var actions = document.getElementById('actions');
+            return actions.appendChild(
+              h('a', 'Install the Firefox extension', {
+                href: './rtc-screen-capture.xpi'
+              })
+            );
+          }
           return console.error('could not capture stream: ', err);
         }
 
@@ -463,8 +107,8 @@ else {
   status('waiting to share');
   sendScreen(places[Math.random() * places.length | 0].toLowerCase());
 }
-
-},{"attachmediastream":5,"fdom/qsa":6,"freeice":7,"getusermedia":11,"hyperscript":12,"random-name/places.json":16,"rtc-quickconnect":17,"rtc-screenshare":71}],5:[function(require,module,exports){
+},{"attachmediastream":2,"fdom/qsa":4,"freeice":5,"getusermedia":9,"hyperscript":11,"random-name/places.json":15,"rtc-quickconnect":16,"rtc-screenshare":79}],2:[function(require,module,exports){
+var adapter = require('webrtc-adapter-test');
 module.exports = function (stream, el, options) {
     var item;
     var URL = window.URL;
@@ -473,7 +117,8 @@ module.exports = function (stream, el, options) {
         autoplay: true,
         mirror: false,
         muted: false,
-        audio: false
+        audio: false,
+        disableContextMenu: false
     };
 
     if (options) {
@@ -488,6 +133,12 @@ module.exports = function (stream, el, options) {
         opts.audio = true;
     }
 
+    if (opts.disableContextMenu) {
+        element.oncontextmenu = function (e) {
+            e.preventDefault();
+        };
+    }
+
     if (opts.autoplay) element.autoplay = 'autoplay';
     if (opts.muted) element.muted = true;
     if (!opts.audio && opts.mirror) {
@@ -497,22 +148,549 @@ module.exports = function (stream, el, options) {
         });
     }
 
-    // this first one should work most everywhere now
-    // but we have a few fallbacks just in case.
-    if (URL && URL.createObjectURL) {
-        element.src = URL.createObjectURL(stream);
-    } else if (element.srcObject) {
-        element.srcObject = stream;
-    } else if (element.mozSrcObject) {
-        element.mozSrcObject = stream;
-    } else {
-        return false;
-    }
-
+    adapter.attachMediaStream(element, stream);
     return element;
 };
 
-},{}],6:[function(require,module,exports){
+},{"webrtc-adapter-test":3}],3:[function(require,module,exports){
+/*
+ *  Copyright (c) 2014 The WebRTC project authors. All Rights Reserved.
+ *
+ *  Use of this source code is governed by a BSD-style license
+ *  that can be found in the LICENSE file in the root of the source
+ *  tree.
+ */
+
+/* More information about these options at jshint.com/docs/options */
+/* jshint browser: true, camelcase: true, curly: true, devel: true,
+   eqeqeq: true, forin: false, globalstrict: true, node: true,
+   quotmark: single, undef: true, unused: strict */
+/* global mozRTCIceCandidate, mozRTCPeerConnection, Promise,
+mozRTCSessionDescription, webkitRTCPeerConnection, MediaStreamTrack */
+/* exported trace,requestUserMedia */
+
+'use strict';
+
+var getUserMedia = null;
+var attachMediaStream = null;
+var reattachMediaStream = null;
+var webrtcDetectedBrowser = null;
+var webrtcDetectedVersion = null;
+var webrtcMinimumVersion = null;
+var webrtcUtils = {
+  log: function() {
+    // suppress console.log output when being included as a module.
+    if (typeof module !== 'undefined' ||
+        typeof require === 'function' && typeof define === 'function') {
+      return;
+    }
+    console.log.apply(console, arguments);
+  }
+};
+
+function trace(text) {
+  // This function is used for logging.
+  if (text[text.length - 1] === '\n') {
+    text = text.substring(0, text.length - 1);
+  }
+  if (window.performance) {
+    var now = (window.performance.now() / 1000).toFixed(3);
+    webrtcUtils.log(now + ': ' + text);
+  } else {
+    webrtcUtils.log(text);
+  }
+}
+
+if (typeof window === 'object') {
+  if (window.HTMLMediaElement &&
+    !('srcObject' in window.HTMLMediaElement.prototype)) {
+    // Shim the srcObject property, once, when HTMLMediaElement is found.
+    Object.defineProperty(window.HTMLMediaElement.prototype, 'srcObject', {
+      get: function() {
+        // If prefixed srcObject property exists, return it.
+        // Otherwise use the shimmed property, _srcObject
+        return 'mozSrcObject' in this ? this.mozSrcObject : this._srcObject;
+      },
+      set: function(stream) {
+        if ('mozSrcObject' in this) {
+          this.mozSrcObject = stream;
+        } else {
+          // Use _srcObject as a private property for this shim
+          this._srcObject = stream;
+          // TODO: revokeObjectUrl(this.src) when !stream to release resources?
+          this.src = URL.createObjectURL(stream);
+        }
+      }
+    });
+  }
+  // Proxy existing globals
+  getUserMedia = window.navigator && window.navigator.getUserMedia;
+}
+
+// Attach a media stream to an element.
+attachMediaStream = function(element, stream) {
+  element.srcObject = stream;
+};
+
+reattachMediaStream = function(to, from) {
+  to.srcObject = from.srcObject;
+};
+
+if (typeof window === 'undefined' || !window.navigator) {
+  webrtcUtils.log('This does not appear to be a browser');
+  webrtcDetectedBrowser = 'not a browser';
+} else if (navigator.mozGetUserMedia && window.mozRTCPeerConnection) {
+  webrtcUtils.log('This appears to be Firefox');
+
+  webrtcDetectedBrowser = 'firefox';
+
+  // the detected firefox version.
+  webrtcDetectedVersion =
+    parseInt(navigator.userAgent.match(/Firefox\/([0-9]+)\./)[1], 10);
+
+  // the minimum firefox version still supported by adapter.
+  webrtcMinimumVersion = 31;
+
+  // The RTCPeerConnection object.
+  window.RTCPeerConnection = function(pcConfig, pcConstraints) {
+    if (webrtcDetectedVersion < 38) {
+      // .urls is not supported in FF < 38.
+      // create RTCIceServers with a single url.
+      if (pcConfig && pcConfig.iceServers) {
+        var newIceServers = [];
+        for (var i = 0; i < pcConfig.iceServers.length; i++) {
+          var server = pcConfig.iceServers[i];
+          if (server.hasOwnProperty('urls')) {
+            for (var j = 0; j < server.urls.length; j++) {
+              var newServer = {
+                url: server.urls[j]
+              };
+              if (server.urls[j].indexOf('turn') === 0) {
+                newServer.username = server.username;
+                newServer.credential = server.credential;
+              }
+              newIceServers.push(newServer);
+            }
+          } else {
+            newIceServers.push(pcConfig.iceServers[i]);
+          }
+        }
+        pcConfig.iceServers = newIceServers;
+      }
+    }
+    return new mozRTCPeerConnection(pcConfig, pcConstraints); // jscs:ignore requireCapitalizedConstructors
+  };
+
+  // The RTCSessionDescription object.
+  window.RTCSessionDescription = mozRTCSessionDescription;
+
+  // The RTCIceCandidate object.
+  window.RTCIceCandidate = mozRTCIceCandidate;
+
+  // getUserMedia constraints shim.
+  getUserMedia = function(constraints, onSuccess, onError) {
+    var constraintsToFF37 = function(c) {
+      if (typeof c !== 'object' || c.require) {
+        return c;
+      }
+      var require = [];
+      Object.keys(c).forEach(function(key) {
+        if (key === 'require' || key === 'advanced' || key === 'mediaSource') {
+          return;
+        }
+        var r = c[key] = (typeof c[key] === 'object') ?
+            c[key] : {ideal: c[key]};
+        if (r.min !== undefined ||
+            r.max !== undefined || r.exact !== undefined) {
+          require.push(key);
+        }
+        if (r.exact !== undefined) {
+          if (typeof r.exact === 'number') {
+            r.min = r.max = r.exact;
+          } else {
+            c[key] = r.exact;
+          }
+          delete r.exact;
+        }
+        if (r.ideal !== undefined) {
+          c.advanced = c.advanced || [];
+          var oc = {};
+          if (typeof r.ideal === 'number') {
+            oc[key] = {min: r.ideal, max: r.ideal};
+          } else {
+            oc[key] = r.ideal;
+          }
+          c.advanced.push(oc);
+          delete r.ideal;
+          if (!Object.keys(r).length) {
+            delete c[key];
+          }
+        }
+      });
+      if (require.length) {
+        c.require = require;
+      }
+      return c;
+    };
+    if (webrtcDetectedVersion < 38) {
+      webrtcUtils.log('spec: ' + JSON.stringify(constraints));
+      if (constraints.audio) {
+        constraints.audio = constraintsToFF37(constraints.audio);
+      }
+      if (constraints.video) {
+        constraints.video = constraintsToFF37(constraints.video);
+      }
+      webrtcUtils.log('ff37: ' + JSON.stringify(constraints));
+    }
+    return navigator.mozGetUserMedia(constraints, onSuccess, onError);
+  };
+
+  navigator.getUserMedia = getUserMedia;
+
+  // Shim for mediaDevices on older versions.
+  if (!navigator.mediaDevices) {
+    navigator.mediaDevices = {getUserMedia: requestUserMedia,
+      addEventListener: function() { },
+      removeEventListener: function() { }
+    };
+  }
+  navigator.mediaDevices.enumerateDevices =
+      navigator.mediaDevices.enumerateDevices || function() {
+    return new Promise(function(resolve) {
+      var infos = [
+        {kind: 'audioinput', deviceId: 'default', label: '', groupId: ''},
+        {kind: 'videoinput', deviceId: 'default', label: '', groupId: ''}
+      ];
+      resolve(infos);
+    });
+  };
+
+  if (webrtcDetectedVersion < 41) {
+    // Work around http://bugzil.la/1169665
+    var orgEnumerateDevices =
+        navigator.mediaDevices.enumerateDevices.bind(navigator.mediaDevices);
+    navigator.mediaDevices.enumerateDevices = function() {
+      return orgEnumerateDevices().catch(function(e) {
+        if (e.name === 'NotFoundError') {
+          return [];
+        }
+        throw e;
+      });
+    };
+  }
+} else if (navigator.webkitGetUserMedia && !!window.chrome) {
+  webrtcUtils.log('This appears to be Chrome');
+
+  webrtcDetectedBrowser = 'chrome';
+
+  // the detected chrome version.
+  webrtcDetectedVersion =
+    parseInt(navigator.userAgent.match(/Chrom(e|ium)\/([0-9]+)\./)[2], 10);
+
+  // the minimum chrome version still supported by adapter.
+  webrtcMinimumVersion = 38;
+
+  // The RTCPeerConnection object.
+  window.RTCPeerConnection = function(pcConfig, pcConstraints) {
+    // Translate iceTransportPolicy to iceTransports,
+    // see https://code.google.com/p/webrtc/issues/detail?id=4869
+    if (pcConfig && pcConfig.iceTransportPolicy) {
+      pcConfig.iceTransports = pcConfig.iceTransportPolicy;
+    }
+
+    var pc = new webkitRTCPeerConnection(pcConfig, pcConstraints); // jscs:ignore requireCapitalizedConstructors
+    var origGetStats = pc.getStats.bind(pc);
+    pc.getStats = function(selector, successCallback, errorCallback) { // jshint ignore: line
+      var self = this;
+      var args = arguments;
+
+      // If selector is a function then we are in the old style stats so just
+      // pass back the original getStats format to avoid breaking old users.
+      if (arguments.length > 0 && typeof selector === 'function') {
+        return origGetStats(selector, successCallback);
+      }
+
+      var fixChromeStats = function(response) {
+        var standardReport = {};
+        var reports = response.result();
+        reports.forEach(function(report) {
+          var standardStats = {
+            id: report.id,
+            timestamp: report.timestamp,
+            type: report.type
+          };
+          report.names().forEach(function(name) {
+            standardStats[name] = report.stat(name);
+          });
+          standardReport[standardStats.id] = standardStats;
+        });
+
+        return standardReport;
+      };
+
+      if (arguments.length >= 2) {
+        var successCallbackWrapper = function(response) {
+          args[1](fixChromeStats(response));
+        };
+
+        return origGetStats.apply(this, [successCallbackWrapper, arguments[0]]);
+      }
+
+      // promise-support
+      return new Promise(function(resolve, reject) {
+        if (args.length === 1 && selector === null) {
+          origGetStats.apply(self, [
+              function(response) {
+                resolve.apply(null, [fixChromeStats(response)]);
+              }, reject]);
+        } else {
+          origGetStats.apply(self, [resolve, reject]);
+        }
+      });
+    };
+
+    return pc;
+  };
+
+  // add promise support
+  ['createOffer', 'createAnswer'].forEach(function(method) {
+    var nativeMethod = webkitRTCPeerConnection.prototype[method];
+    webkitRTCPeerConnection.prototype[method] = function() {
+      var self = this;
+      if (arguments.length < 1 || (arguments.length === 1 &&
+          typeof(arguments[0]) === 'object')) {
+        var opts = arguments.length === 1 ? arguments[0] : undefined;
+        return new Promise(function(resolve, reject) {
+          nativeMethod.apply(self, [resolve, reject, opts]);
+        });
+      } else {
+        return nativeMethod.apply(this, arguments);
+      }
+    };
+  });
+
+  ['setLocalDescription', 'setRemoteDescription',
+      'addIceCandidate'].forEach(function(method) {
+    var nativeMethod = webkitRTCPeerConnection.prototype[method];
+    webkitRTCPeerConnection.prototype[method] = function() {
+      var args = arguments;
+      var self = this;
+      return new Promise(function(resolve, reject) {
+        nativeMethod.apply(self, [args[0],
+            function() {
+              resolve();
+              if (args.length >= 2) {
+                args[1].apply(null, []);
+              }
+            },
+            function(err) {
+              reject(err);
+              if (args.length >= 3) {
+                args[2].apply(null, [err]);
+              }
+            }]
+          );
+      });
+    };
+  });
+
+  // getUserMedia constraints shim.
+  var constraintsToChrome = function(c) {
+    if (typeof c !== 'object' || c.mandatory || c.optional) {
+      return c;
+    }
+    var cc = {};
+    Object.keys(c).forEach(function(key) {
+      if (key === 'require' || key === 'advanced' || key === 'mediaSource') {
+        return;
+      }
+      var r = (typeof c[key] === 'object') ? c[key] : {ideal: c[key]};
+      if (r.exact !== undefined && typeof r.exact === 'number') {
+        r.min = r.max = r.exact;
+      }
+      var oldname = function(prefix, name) {
+        if (prefix) {
+          return prefix + name.charAt(0).toUpperCase() + name.slice(1);
+        }
+        return (name === 'deviceId') ? 'sourceId' : name;
+      };
+      if (r.ideal !== undefined) {
+        cc.optional = cc.optional || [];
+        var oc = {};
+        if (typeof r.ideal === 'number') {
+          oc[oldname('min', key)] = r.ideal;
+          cc.optional.push(oc);
+          oc = {};
+          oc[oldname('max', key)] = r.ideal;
+          cc.optional.push(oc);
+        } else {
+          oc[oldname('', key)] = r.ideal;
+          cc.optional.push(oc);
+        }
+      }
+      if (r.exact !== undefined && typeof r.exact !== 'number') {
+        cc.mandatory = cc.mandatory || {};
+        cc.mandatory[oldname('', key)] = r.exact;
+      } else {
+        ['min', 'max'].forEach(function(mix) {
+          if (r[mix] !== undefined) {
+            cc.mandatory = cc.mandatory || {};
+            cc.mandatory[oldname(mix, key)] = r[mix];
+          }
+        });
+      }
+    });
+    if (c.advanced) {
+      cc.optional = (cc.optional || []).concat(c.advanced);
+    }
+    return cc;
+  };
+
+  getUserMedia = function(constraints, onSuccess, onError) {
+    if (constraints.audio) {
+      constraints.audio = constraintsToChrome(constraints.audio);
+    }
+    if (constraints.video) {
+      constraints.video = constraintsToChrome(constraints.video);
+    }
+    webrtcUtils.log('chrome: ' + JSON.stringify(constraints));
+    return navigator.webkitGetUserMedia(constraints, onSuccess, onError);
+  };
+  navigator.getUserMedia = getUserMedia;
+
+  if (!navigator.mediaDevices) {
+    navigator.mediaDevices = {getUserMedia: requestUserMedia,
+                              enumerateDevices: function() {
+      return new Promise(function(resolve) {
+        var kinds = {audio: 'audioinput', video: 'videoinput'};
+        return MediaStreamTrack.getSources(function(devices) {
+          resolve(devices.map(function(device) {
+            return {label: device.label,
+                    kind: kinds[device.kind],
+                    deviceId: device.id,
+                    groupId: ''};
+          }));
+        });
+      });
+    }};
+  }
+
+  // A shim for getUserMedia method on the mediaDevices object.
+  // TODO(KaptenJansson) remove once implemented in Chrome stable.
+  if (!navigator.mediaDevices.getUserMedia) {
+    navigator.mediaDevices.getUserMedia = function(constraints) {
+      return requestUserMedia(constraints);
+    };
+  } else {
+    // Even though Chrome 45 has navigator.mediaDevices and a getUserMedia
+    // function which returns a Promise, it does not accept spec-style
+    // constraints.
+    var origGetUserMedia = navigator.mediaDevices.getUserMedia.
+        bind(navigator.mediaDevices);
+    navigator.mediaDevices.getUserMedia = function(c) {
+      webrtcUtils.log('spec:   ' + JSON.stringify(c)); // whitespace for alignment
+      c.audio = constraintsToChrome(c.audio);
+      c.video = constraintsToChrome(c.video);
+      webrtcUtils.log('chrome: ' + JSON.stringify(c));
+      return origGetUserMedia(c);
+    };
+  }
+
+  // Dummy devicechange event methods.
+  // TODO(KaptenJansson) remove once implemented in Chrome stable.
+  if (typeof navigator.mediaDevices.addEventListener === 'undefined') {
+    navigator.mediaDevices.addEventListener = function() {
+      webrtcUtils.log('Dummy mediaDevices.addEventListener called.');
+    };
+  }
+  if (typeof navigator.mediaDevices.removeEventListener === 'undefined') {
+    navigator.mediaDevices.removeEventListener = function() {
+      webrtcUtils.log('Dummy mediaDevices.removeEventListener called.');
+    };
+  }
+
+  // Attach a media stream to an element.
+  attachMediaStream = function(element, stream) {
+    if (webrtcDetectedVersion >= 43) {
+      element.srcObject = stream;
+    } else if (typeof element.src !== 'undefined') {
+      element.src = URL.createObjectURL(stream);
+    } else {
+      webrtcUtils.log('Error attaching stream to element.');
+    }
+  };
+  reattachMediaStream = function(to, from) {
+    if (webrtcDetectedVersion >= 43) {
+      to.srcObject = from.srcObject;
+    } else {
+      to.src = from.src;
+    }
+  };
+
+} else if (navigator.mediaDevices && navigator.userAgent.match(
+    /Edge\/(\d+).(\d+)$/)) {
+  webrtcUtils.log('This appears to be Edge');
+  webrtcDetectedBrowser = 'edge';
+
+  webrtcDetectedVersion =
+    parseInt(navigator.userAgent.match(/Edge\/(\d+).(\d+)$/)[2], 10);
+
+  // the minimum version still supported by adapter.
+  webrtcMinimumVersion = 12;
+} else {
+  webrtcUtils.log('Browser does not appear to be WebRTC-capable');
+}
+
+// Returns the result of getUserMedia as a Promise.
+function requestUserMedia(constraints) {
+  return new Promise(function(resolve, reject) {
+    getUserMedia(constraints, resolve, reject);
+  });
+}
+
+var webrtcTesting = {};
+Object.defineProperty(webrtcTesting, 'version', {
+  set: function(version) {
+    webrtcDetectedVersion = version;
+  }
+});
+
+if (typeof module !== 'undefined') {
+  var RTCPeerConnection;
+  if (typeof window !== 'undefined') {
+    RTCPeerConnection = window.RTCPeerConnection;
+  }
+  module.exports = {
+    RTCPeerConnection: RTCPeerConnection,
+    getUserMedia: getUserMedia,
+    attachMediaStream: attachMediaStream,
+    reattachMediaStream: reattachMediaStream,
+    webrtcDetectedBrowser: webrtcDetectedBrowser,
+    webrtcDetectedVersion: webrtcDetectedVersion,
+    webrtcMinimumVersion: webrtcMinimumVersion,
+    webrtcTesting: webrtcTesting
+    //requestUserMedia: not exposed on purpose.
+    //trace: not exposed on purpose.
+  };
+} else if ((typeof require === 'function') && (typeof define === 'function')) {
+  // Expose objects and functions when RequireJS is doing the loading.
+  define([], function() {
+    return {
+      RTCPeerConnection: window.RTCPeerConnection,
+      getUserMedia: getUserMedia,
+      attachMediaStream: attachMediaStream,
+      reattachMediaStream: reattachMediaStream,
+      webrtcDetectedBrowser: webrtcDetectedBrowser,
+      webrtcDetectedVersion: webrtcDetectedVersion,
+      webrtcMinimumVersion: webrtcMinimumVersion,
+      webrtcTesting: webrtcTesting
+      //requestUserMedia: not exposed on purpose.
+      //trace: not exposed on purpose.
+    };
+  });
+}
+
+},{}],4:[function(require,module,exports){
 /* jshint node: true */
 /* global document: false */
 'use strict';
@@ -555,7 +733,7 @@ module.exports = function(selector, scope) {
               scope.querySelectorAll(selector)
     );
 };
-},{}],7:[function(require,module,exports){
+},{}],5:[function(require,module,exports){
 /* jshint node: true */
 'use strict';
 
@@ -643,7 +821,12 @@ var freeice = module.exports = function(opts) {
     }
 
     return out.map(function(url) {
-      return normalice(type + ':' + url);
+        //If it's a not a string, don't try to "normalice" it otherwise using type:url will screw it up
+        if ((typeof url !== 'string') && (! (url instanceof String))) {
+            return url;
+        } else {
+            return normalice(type + ':' + url);
+        }
     });
   }
 
@@ -657,7 +840,7 @@ var freeice = module.exports = function(opts) {
   return selected;
 };
 
-},{"./stun.json":9,"./turn.json":10,"normalice":8}],8:[function(require,module,exports){
+},{"./stun.json":7,"./turn.json":8,"normalice":6}],6:[function(require,module,exports){
 /**
   # normalice
 
@@ -719,7 +902,7 @@ module.exports = function(input) {
   return output;
 };
 
-},{}],9:[function(require,module,exports){
+},{}],7:[function(require,module,exports){
 module.exports=[
   "stun.l.google.com:19302",
   "stun1.l.google.com:19302",
@@ -728,7 +911,6 @@ module.exports=[
   "stun4.l.google.com:19302",
   "stun.ekiga.net",
   "stun.ideasip.com",
-  "stun.rixtelecom.se",
   "stun.schlund.de",
   "stun.stunprotocol.org:3478",
   "stun.voiparound.com",
@@ -738,22 +920,20 @@ module.exports=[
   "stun.services.mozilla.com"
 ]
 
-},{}],10:[function(require,module,exports){
+},{}],8:[function(require,module,exports){
 module.exports=[]
 
-},{}],11:[function(require,module,exports){
+},{}],9:[function(require,module,exports){
 // getUserMedia helper by @HenrikJoreteg
-var func = (window.navigator.getUserMedia ||
-            window.navigator.webkitGetUserMedia ||
-            window.navigator.mozGetUserMedia ||
-            window.navigator.msGetUserMedia);
-
+var adapter = require('webrtc-adapter-test');
 
 module.exports = function (constraints, cb) {
     var options, error;
     var haveOpts = arguments.length === 2;
     var defaultOpts = {video: true, audio: true};
+
     var denied = 'PermissionDeniedError';
+    var altDenied = 'PERMISSION_DENIED';
     var notSatisfied = 'ConstraintNotSatisfiedError';
 
     // make constraints optional
@@ -763,21 +943,8 @@ module.exports = function (constraints, cb) {
     }
 
     // treat lack of browser support like an error
-    if (!func) {
+    if (!navigator.getUserMedia) {
         // throw proper error per spec
-        error = new Error('MediaStreamError');
-        error.name = 'NotSupportedError';
-
-        // keep all callbacks async
-        return window.setTimeout(function () {
-            cb(error);
-        }, 0);
-    }
-
-    // make requesting media from non-http sources trigger an error
-    // current browsers silently drop the request instead
-    var protocol = window.location.protocol;
-    if (protocol !== 'http:' && protocol !== 'https:') {
         error = new Error('MediaStreamError');
         error.name = 'NotSupportedError';
 
@@ -798,11 +965,12 @@ module.exports = function (constraints, cb) {
         }, 0);
     }
 
+    // testing support
     if (localStorage && localStorage.useFirefoxFakeDevice === "true") {
         constraints.fake = true;
     }
 
-    func.call(window.navigator, constraints, function (stream) {
+    navigator.getUserMedia(constraints, function (stream) {
         cb(null, stream);
     }, function (err) {
         var error;
@@ -811,7 +979,7 @@ module.exports = function (constraints, cb) {
         // we coerce all non-denied to "constraint not satisfied".
         if (typeof err === 'string') {
             error = new Error('MediaStreamError');
-            if (err === denied) {
+            if (err === denied || err === altDenied) {
                 error.name = denied;
             } else {
                 error.name = notSatisfied;
@@ -836,7 +1004,9 @@ module.exports = function (constraints, cb) {
     });
 };
 
-},{}],12:[function(require,module,exports){
+},{"webrtc-adapter-test":10}],10:[function(require,module,exports){
+arguments[4][3][0].apply(exports,arguments)
+},{"dup":3}],11:[function(require,module,exports){
 var split = require('browser-split')
 var ClassList = require('class-list')
 require('html-element')
@@ -983,7 +1153,7 @@ function isArray (arr) {
   return Object.prototype.toString.call(arr) == '[object Array]'
 }
 
-},{"browser-split":13,"class-list":14,"html-element":1}],13:[function(require,module,exports){
+},{"browser-split":12,"class-list":13,"html-element":92}],12:[function(require,module,exports){
 /*!
  * Cross-Browser Split 1.1.1
  * Copyright 2007-2012 Steven Levithan <stevenlevithan.com>
@@ -1091,7 +1261,7 @@ module.exports = (function split(undef) {
   return self;
 })();
 
-},{}],14:[function(require,module,exports){
+},{}],13:[function(require,module,exports){
 // contains, add, remove, toggle
 var indexof = require('indexof')
 
@@ -1192,7 +1362,7 @@ function isTruthy(value) {
     return !!value
 }
 
-},{"indexof":15}],15:[function(require,module,exports){
+},{"indexof":14}],14:[function(require,module,exports){
 
 var indexOf = [].indexOf;
 
@@ -1203,7 +1373,7 @@ module.exports = function(arr, obj){
   }
   return -1;
 };
-},{}],16:[function(require,module,exports){
+},{}],15:[function(require,module,exports){
 module.exports=[
 "Aaronsburg"
 ,
@@ -21598,21 +21768,16 @@ module.exports=[
 "Zwolle"
 ]
 
-},{}],17:[function(require,module,exports){
-(function (process){
+},{}],16:[function(require,module,exports){
 /* jshint node: true */
+/* global location */
 'use strict';
 
 var rtc = require('rtc-tools');
 var mbus = require('mbus');
-var cleanup = require('rtc-tools/cleanup');
 var detectPlugin = require('rtc-core/plugin');
 var debug = rtc.logger('rtc-quickconnect');
-var defaults = require('cog/defaults');
 var extend = require('cog/extend');
-var getable = require('cog/getable');
-var messenger = require('./messenger');
-var reTrailingSlash = /\/$/;
 
 /**
   # rtc-quickconnect
@@ -21710,14 +21875,20 @@ var reTrailingSlash = /\/$/;
 **/
 module.exports = function(signalhost, opts) {
   var hash = typeof location != 'undefined' && location.hash.slice(1);
-  var signaller = require('rtc-signaller')(messenger(signalhost), opts);
+  var signaller = require('rtc-pluggable-signaller')(extend({
+    signaller: signalhost,
+
+    // use the primus endpoint as a fallback in case we are talking to an
+    // older switchboard instance
+    endpoints: ['/', '/primus']
+  }, opts));
+  var getPeerData = require('./lib/getpeerdata')(signaller.peers);
 
   // init configurable vars
   var ns = (opts || {}).ns || '';
   var room = (opts || {}).room;
   var debugging = (opts || {}).debug;
   var allowJoin = !(opts || {}).manualJoin;
-  var heartbeat = (opts || {}).heartbeat || 2500;
   var profile = {};
   var announced = false;
 
@@ -21729,100 +21900,20 @@ module.exports = function(signalhost, opts) {
   var localStreams = [];
 
   // create the calls map
-  var calls = signaller.calls = getable({});
+  var calls = signaller.calls = require('./lib/calls')(signaller, opts);
 
   // create the known data channels registry
   var channels = {};
 
   // save the plugins passed to the signaller
   var plugins = signaller.plugins = (opts || {}).plugins || [];
-  var plugin = detectPlugin(signaller.plugins);
+  var plugin = detectPlugin(plugins);
   var pluginReady;
 
   // check how many local streams have been expected (default: 0)
   var expectedLocalStreams = parseInt((opts || {}).expectedLocalStreams, 10) || 0;
   var announceTimer = 0;
-  var heartbeatTimer = 0;
   var updateTimer = 0;
-
-  function callCreate(id, pc) {
-    calls.set(id, {
-      active: false,
-      pc: pc,
-      channels: getable({}),
-      streams: [],
-      lastping: Date.now()
-    });
-  }
-
-  function callEnd(id) {
-    var call = calls.get(id);
-
-    // if we have no data, then do nothing
-    if (! call) {
-      return;
-    }
-
-    debug('ending call to: ' + id);
-
-    // if we have no data, then return
-    call.channels.keys().forEach(function(label) {
-      var channel = call.channels.get(label);
-      var args = [id, channel, label];
-
-      // emit the plain channel:closed event
-      signaller.apply(signaller, ['channel:closed'].concat(args));
-
-      // emit the labelled version of the event
-      signaller.apply(signaller, ['channel:closed:' + label].concat(args));
-
-      // decouple the events
-      channel.onopen = null;
-    });
-
-    // trigger stream:removed events for each of the remotestreams in the pc
-    call.streams.forEach(function(stream) {
-      signaller('stream:removed', id, stream);
-    });
-
-    // delete the call data
-    calls.delete(id);
-
-    // if we have no more calls, disable the heartbeat
-    if (calls.keys().length === 0) {
-      hbReset();
-    }
-
-    // trigger the call:ended event
-    signaller('call:ended', id, call.pc);
-
-    // ensure the peer connection is properly cleaned up
-    cleanup(call.pc);
-  }
-
-  function callStart(id, pc, data) {
-    var call = calls.get(id);
-    var streams = [].concat(pc.getRemoteStreams());
-
-    // flag the call as active
-    call.active = true;
-    call.streams = [].concat(pc.getRemoteStreams());
-
-    pc.onaddstream = createStreamAddHandler(id);
-    pc.onremovestream = createStreamRemoveHandler(id);
-
-    debug(signaller.id + ' - ' + id + ' call start: ' + streams.length + ' streams');
-    signaller('call:started', id, pc, data);
-
-    // configure the heartbeat timer
-    hbInit();
-
-    // examine the existing remote streams after a short delay
-    process.nextTick(function() {
-      // iterate through any remote streams
-      streams.forEach(receiveRemoteStream(id));
-    });
-  }
 
   function checkReadyToAnnounce() {
     clearTimeout(announceTimer);
@@ -21861,7 +21952,7 @@ module.exports = function(signalhost, opts) {
     }, 0);
   }
 
- function connect(id) {
+  function connect(id) {
     var data = getPeerData(id);
     var pc;
     var monitor;
@@ -21872,7 +21963,7 @@ module.exports = function(signalhost, opts) {
     }
 
     // end any call to this id so we know we are starting fresh
-    callEnd(id);
+    calls.end(id);
 
     // create a peer connection
     // iceServers that have been created using genice taking precendence
@@ -21884,10 +21975,10 @@ module.exports = function(signalhost, opts) {
     signaller('peer:connect', data.id, pc, data);
 
     // add this connection to the calls list
-    callCreate(data.id, pc);
+    calls.create(data.id, pc);
 
     // add the local streams
-    localStreams.forEach(function(stream, idx) {
+    localStreams.forEach(function(stream) {
       pc.addStream(stream);
     });
 
@@ -21926,8 +22017,8 @@ module.exports = function(signalhost, opts) {
     signaller('peer:couple', id, pc, data, monitor);
 
     // once active, trigger the peer connect event
-    monitor.once('connected', callStart.bind(null, id, pc, data))
-    monitor.once('closed', callEnd.bind(null, id));
+    monitor.once('connected', calls.start.bind(null, id, pc, data));
+    monitor.once('closed', calls.end.bind(null, id));
 
     // if we are the master connnection, create the offer
     // NOTE: this only really for the sake of politeness, as rtc couple
@@ -21935,22 +22026,6 @@ module.exports = function(signalhost, opts) {
     if (signaller.isMaster(id)) {
       monitor.createOffer();
     }
-  }
-
-  function createStreamAddHandler(id) {
-    return function(evt) {
-      debug('peer ' + id + ' added stream');
-      updateRemoteStreams(id);
-      receiveRemoteStream(id)(evt.stream);
-    }
-  }
-
-  function createStreamRemoveHandler(id) {
-    return function(evt) {
-      debug('peer ' + id + ' removed stream');
-      updateRemoteStreams(id);
-      signaller('stream:removed', id, evt.stream);
-    };
   }
 
   function getActiveCall(peerId) {
@@ -21961,12 +22036,6 @@ module.exports = function(signalhost, opts) {
     }
 
     return call;
-  }
-
-  function getPeerData(id) {
-    var peer = signaller.peers.get(id);
-
-    return peer && peer.data;
   }
 
   function gotPeerChannel(channel, pc, data) {
@@ -22016,37 +22085,6 @@ module.exports = function(signalhost, opts) {
     }, 500);
   }
 
-  function hbInit() {
-    // if the heartbeat timer is active, or heartbeat has been disabled (0, false, etc) return
-    if (heartbeatTimer || (! heartbeat)) {
-      return;
-    }
-
-    heartbeatTimer = setInterval(hbSend, heartbeat);
-  }
-
-  function hbSend() {
-    var tickInactive = (Date.now() - (heartbeat * 4));
-
-    // iterate through our established calls
-    calls.keys().forEach(function(id) {
-      var call = calls.get(id);
-
-      // if the call ping is too old, end the call
-      if (call.lastping < tickInactive) {
-        return callEnd(id);
-      }
-
-      // send a ping message
-      signaller.to(id).send('/ping');
-    });
-  }
-
-  function hbReset() {
-    clearInterval(heartbeatTimer);
-    heartbeatTimer = 0;
-  }
-
   function initPlugin() {
     return plugin && plugin.init(opts, function(err) {
       if (err) {
@@ -22080,31 +22118,6 @@ module.exports = function(signalhost, opts) {
       debug('received peer update from peer ' + id + ', no active calls');
       signaller.to(id).send('/reconnect');
       return connect(id);
-    }
-  }
-
-  function handlePing(sender) {
-    var call = calls.get(sender && sender.id);
-
-    // set the last ping for the data
-    if (call) {
-      call.lastping = Date.now();
-    }
-  }
-
-  function receiveRemoteStream(id) {
-    var call = calls.get(id);
-
-    return function(stream) {
-      signaller('stream:added', id, stream, getPeerData(id));
-    };
-  }
-
-  function updateRemoteStreams(id) {
-    var call = calls.get(id);
-
-    if (call && call.pc) {
-      call.streams = [].concat(call.pc.getRemoteStreams());
     }
   }
 
@@ -22175,7 +22188,7 @@ module.exports = function(signalhost, opts) {
 
   **/
   signaller.endCalls = function() {
-    calls.keys().forEach(callEnd);
+    calls.keys().forEach(calls.end);
   };
 
   /**
@@ -22442,7 +22455,7 @@ module.exports = function(signalhost, opts) {
   signaller.on('local:announce', handleLocalAnnounce);
 
   // handle ping messages
-  signaller.on('message:ping', handlePing);
+  signaller.on('message:ping', calls.ping);
 
   // use genice to find our iceServers
   require('rtc-core/genice')(opts, function(err, servers) {
@@ -22463,17 +22476,188 @@ module.exports = function(signalhost, opts) {
   return signaller;
 };
 
-}).call(this,require('_process'))
-},{"./messenger":18,"_process":3,"cog/defaults":19,"cog/extend":20,"cog/getable":21,"mbus":25,"rtc-core/genice":29,"rtc-core/plugin":31,"rtc-signaller":35,"rtc-tools":64,"rtc-tools/cleanup":60}],18:[function(require,module,exports){
-module.exports = function(messenger) {
-  if (typeof messenger == 'function') {
-    return messenger;
+},{"./lib/calls":17,"./lib/getpeerdata":18,"cog/extend":21,"mbus":26,"rtc-core/genice":28,"rtc-core/plugin":30,"rtc-pluggable-signaller":31,"rtc-tools":64}],17:[function(require,module,exports){
+(function (process){
+var rtc = require('rtc-tools');
+var debug = rtc.logger('rtc-quickconnect');
+var cleanup = require('rtc-tools/cleanup');
+var getable = require('cog/getable');
+
+module.exports = function(signaller, opts) {
+  var calls = getable({});
+  var getPeerData = require('./getpeerdata')(signaller.peers);
+  var heartbeat;
+
+  function create(id, pc) {
+    calls.set(id, {
+      active: false,
+      pc: pc,
+      channels: getable({}),
+      streams: [],
+      lastping: Date.now()
+    });
   }
 
-  return require('rtc-switchboard-messenger')(messenger);
+  function createStreamAddHandler(id) {
+    return function(evt) {
+      debug('peer ' + id + ' added stream');
+      updateRemoteStreams(id);
+      receiveRemoteStream(id)(evt.stream);
+    };
+  }
+
+  function createStreamRemoveHandler(id) {
+    return function(evt) {
+      debug('peer ' + id + ' removed stream');
+      updateRemoteStreams(id);
+      signaller('stream:removed', id, evt.stream);
+    };
+  }
+
+  function end(id) {
+    var call = calls.get(id);
+
+    // if we have no data, then do nothing
+    if (! call) {
+      return;
+    }
+
+    // if we have no data, then return
+    call.channels.keys().forEach(function(label) {
+      var channel = call.channels.get(label);
+      var args = [id, channel, label];
+
+      // emit the plain channel:closed event
+      signaller.apply(signaller, ['channel:closed'].concat(args));
+
+      // emit the labelled version of the event
+      signaller.apply(signaller, ['channel:closed:' + label].concat(args));
+
+      // decouple the events
+      channel.onopen = null;
+    });
+
+    // trigger stream:removed events for each of the remotestreams in the pc
+    call.streams.forEach(function(stream) {
+      signaller('stream:removed', id, stream);
+    });
+
+    // delete the call data
+    calls.delete(id);
+
+    // if we have no more calls, disable the heartbeat
+    if (calls.keys().length === 0) {
+      resetHeartbeat();
+    }
+
+    // trigger the call:ended event
+    signaller('call:ended', id, call.pc);
+
+    // ensure the peer connection is properly cleaned up
+    cleanup(call.pc);
+  }
+
+  function ping(sender) {
+    var call = calls.get(sender && sender.id);
+
+    // set the last ping for the data
+    if (call) {
+      call.lastping = Date.now();
+    }
+  }
+
+  function receiveRemoteStream(id) {
+    return function(stream) {
+      signaller('stream:added', id, stream, getPeerData(id));
+    };
+  }
+
+  function resetHeartbeat() {
+    clearInterval(heartbeat);
+    heartbeat = 0;
+  }
+
+  function start(id, pc, data) {
+    var call = calls.get(id);
+    var streams = [].concat(pc.getRemoteStreams());
+
+    // flag the call as active
+    call.active = true;
+    call.streams = [].concat(pc.getRemoteStreams());
+
+    pc.onaddstream = createStreamAddHandler(id);
+    pc.onremovestream = createStreamRemoveHandler(id);
+
+    debug(signaller.id + ' - ' + id + ' call start: ' + streams.length + ' streams');
+    signaller('call:started', id, pc, data);
+
+    // configure the heartbeat timer
+    call.lastping = Date.now();
+    heartbeat = heartbeat || require('./heartbeat')(signaller, calls, opts);
+
+    // examine the existing remote streams after a short delay
+    process.nextTick(function() {
+      // iterate through any remote streams
+      streams.forEach(receiveRemoteStream(id));
+    });
+  }
+
+  function updateRemoteStreams(id) {
+    var call = calls.get(id);
+
+    if (call && call.pc) {
+      call.streams = [].concat(call.pc.getRemoteStreams());
+    }
+  }
+
+  calls.create = create;
+  calls.end = end;
+  calls.ping = ping;
+  calls.start = start;
+
+  return calls;
 };
 
-},{"rtc-switchboard-messenger":51}],19:[function(require,module,exports){
+}).call(this,require('_process'))
+},{"./getpeerdata":18,"./heartbeat":19,"_process":94,"cog/getable":22,"rtc-tools":64,"rtc-tools/cleanup":60}],18:[function(require,module,exports){
+module.exports = function(peers) {
+  return function(id) {
+    var peer = peers.get(id);
+    return peer && peer.data;
+  };
+};
+
+},{}],19:[function(require,module,exports){
+module.exports = function(signaller, calls, opts) {
+  var heartbeat = (opts || {}).heartbeat || 2500;
+  var heartbeatTimer = 0;
+
+  function send() {
+    var tickInactive = (Date.now() - (heartbeat * 4));
+
+    // iterate through our established calls
+    calls.keys().forEach(function(id) {
+      var call = calls.get(id);
+
+      // if the call ping is too old, end the call
+      if (call.active && call.lastping < tickInactive) {
+        signaller('call:expired', id, call.pc);
+        return calls.end(id);
+      }
+
+      // send a ping message
+      signaller.to(id).send('/ping');
+    });
+  }
+
+  if (! heartbeat) {
+    return;
+  }
+
+  return setInterval(send, heartbeat);
+};
+
+},{}],20:[function(require,module,exports){
 /* jshint node: true */
 'use strict';
 
@@ -22515,7 +22699,7 @@ module.exports = function(target) {
 
   return target;
 };
-},{}],20:[function(require,module,exports){
+},{}],21:[function(require,module,exports){
 /* jshint node: true */
 'use strict';
 
@@ -22550,7 +22734,7 @@ module.exports = function(target) {
 
   return target;
 };
-},{}],21:[function(require,module,exports){
+},{}],22:[function(require,module,exports){
 /**
   ## cog/getable
 
@@ -22595,7 +22779,7 @@ module.exports = function(target) {
   };
 };
 
-},{}],22:[function(require,module,exports){
+},{}],23:[function(require,module,exports){
 /* jshint node: true */
 'use strict';
 
@@ -22661,7 +22845,7 @@ module.exports = function(input) {
 
   return reNumeric.test(input) ? parseFloat(input) : input;
 };
-},{}],23:[function(require,module,exports){
+},{}],24:[function(require,module,exports){
 /* jshint node: true */
 'use strict';
 
@@ -22796,7 +22980,7 @@ logger.enable = function() {
 
   return logger;
 };
-},{}],24:[function(require,module,exports){
+},{}],25:[function(require,module,exports){
 /* jshint node: true */
 'use strict';
 
@@ -22849,8 +23033,7 @@ module.exports = function(fn, delay, opts) {
     fn.apply(this, arguments);
   };
 };
-},{}],25:[function(require,module,exports){
-var createTrie = require('array-trie');
+},{}],26:[function(require,module,exports){
 var reDelim = /[\.\:]/;
 
 /**
@@ -22874,14 +23057,13 @@ var reDelim = /[\.\:]/;
 **/
 
 var createBus = module.exports = function(namespace, parent, scope) {
-  var registry = createTrie();
+  var registry = {};
   var feeds = [];
 
   function bus(name) {
     var args = [].slice.call(arguments, 1);
-    var parts = getNameParts(name);
-    var delimited = parts.join('.');
-    var handlers = registry.get(parts) || [];
+    var delimited = normalize(name);
+    var handlers = registry[delimited] || [];
     var results;
 
     // send through the feeds
@@ -22897,7 +23079,10 @@ var createBus = module.exports = function(namespace, parent, scope) {
     // run the parent handlers
     if (bus.parent) {
       results = results.concat(
-        bus.parent.apply(scope || this, [namespace.concat(parts)].concat(args))
+        bus.parent.apply(
+          scope || this,
+          [(namespace ? namespace + '.' : '') + delimited].concat(args)
+        )
       );
     }
 
@@ -22914,11 +23099,11 @@ var createBus = module.exports = function(namespace, parent, scope) {
   function clear(name) {
     // if we have a name, reset handlers for that handler
     if (name) {
-      registry.set(getNameParts(name), []);
+      delete registry[normalize(name)];
     }
     // otherwise, reset the entire handler registry
     else {
-      registry = createTrie();
+      registry = {};
     }
   }
 
@@ -22945,8 +23130,8 @@ var createBus = module.exports = function(namespace, parent, scope) {
     return stop;
   }
 
-  function getNameParts(name) {
-    return Array.isArray(name) ? name : (name ? name.split(reDelim) : []);
+  function normalize(name) {
+    return (Array.isArray(name) ? name : name.split(reDelim)).join('.');
   }
 
   /**
@@ -22955,8 +23140,8 @@ var createBus = module.exports = function(namespace, parent, scope) {
     Deregister an event handler.
   **/
   function off(name, handler) {
-    var handlers = registry.get(getNameParts(name));
-    var idx = handlers ? handlers.indexOf(handler) : -1;
+    var handlers = registry[normalize(name)] || [];
+    var idx = handlers ? handlers.indexOf(handler._actual || handler) : -1;
 
     if (idx >= 0) {
       handlers.splice(idx, 1);
@@ -22970,14 +23155,16 @@ var createBus = module.exports = function(namespace, parent, scope) {
 
   **/
   function on(name, handler) {
-    var parts = getNameParts(name);
-    var handlers = registry.get(parts);
+    var handlers;
+
+    name = normalize(name);
+    handlers = registry[name];
 
     if (handlers) {
       handlers.push(handler);
     }
     else {
-      registry.set(parts, [ handler ]);
+      registry[name] = [ handler ];
     }
 
     return bus;
@@ -22993,12 +23180,15 @@ var createBus = module.exports = function(namespace, parent, scope) {
 
   **/
   function once(name, handler) {
-    return on(name, function handleEvent() {
+    function handleEvent() {
       var result = handler.apply(this, arguments);
-      bus.off(name, handleEvent);
 
+      bus.off(name, handleEvent);
       return result;
-    });
+    }
+
+    handler._actual = handleEvent;
+    return on(name, handleEvent);
   }
 
   if (typeof namespace == 'function') {
@@ -23006,169 +23196,19 @@ var createBus = module.exports = function(namespace, parent, scope) {
     namespace = '';
   }
 
-  namespace = (namespace && namespace.split(reDelim)) || [];
+  namespace = normalize(namespace || '');
 
   bus.clear = bus.removeAllListeners = clear;
   bus.feed = feed;
   bus.on = bus.addListener = on;
   bus.once = once;
   bus.off = bus.removeListener = off;
-  bus.parent = parent || (namespace && namespace.length > 0 && createBus());
+  bus.parent = parent || (namespace && createBus());
 
   return bus;
 };
 
-},{"array-trie":27}],26:[function(require,module,exports){
-"use strict"
-
-function compileSearch(funcName, predicate, reversed, extraArgs, useNdarray, earlyOut) {
-  var code = [
-    "function ", funcName, "(a,l,h,", extraArgs.join(","),  "){",
-earlyOut ? "" : "var i=", (reversed ? "l-1" : "h+1"),
-";while(l<=h){\
-var m=(l+h)>>>1,x=a", useNdarray ? ".get(m)" : "[m]"]
-  if(earlyOut) {
-    if(predicate.indexOf("c") < 0) {
-      code.push(";if(x===y){return m}else if(x<=y){")
-    } else {
-      code.push(";var p=c(x,y);if(p===0){return m}else if(p<=0){")
-    }
-  } else {
-    code.push(";if(", predicate, "){i=m;")
-  }
-  if(reversed) {
-    code.push("l=m+1}else{h=m-1}")
-  } else {
-    code.push("h=m-1}else{l=m+1}")
-  }
-  code.push("}")
-  if(earlyOut) {
-    code.push("return -1};")
-  } else {
-    code.push("return i};")
-  }
-  return code.join("")
-}
-
-function compileBoundsSearch(predicate, reversed, suffix, earlyOut) {
-  var result = new Function([
-  compileSearch("A", "x" + predicate + "y", reversed, ["y"], false, earlyOut),
-  compileSearch("B", "x" + predicate + "y", reversed, ["y"], true, earlyOut),
-  compileSearch("P", "c(x,y)" + predicate + "0", reversed, ["y", "c"], false, earlyOut),
-  compileSearch("Q", "c(x,y)" + predicate + "0", reversed, ["y", "c"], true, earlyOut),
-"function dispatchBsearch", suffix, "(a,y,c,l,h){\
-if(a.shape){\
-if(typeof(c)==='function'){\
-return Q(a,(l===undefined)?0:l|0,(h===undefined)?a.shape[0]-1:h|0,y,c)\
-}else{\
-return B(a,(c===undefined)?0:c|0,(l===undefined)?a.shape[0]-1:l|0,y)\
-}}else{\
-if(typeof(c)==='function'){\
-return P(a,(l===undefined)?0:l|0,(h===undefined)?a.length-1:h|0,y,c)\
-}else{\
-return A(a,(c===undefined)?0:c|0,(l===undefined)?a.length-1:l|0,y)\
-}}}\
-return dispatchBsearch", suffix].join(""))
-  return result()
-}
-
-module.exports = {
-  ge: compileBoundsSearch(">=", false, "GE"),
-  gt: compileBoundsSearch(">", false, "GT"),
-  lt: compileBoundsSearch("<", true, "LT"),
-  le: compileBoundsSearch("<=", true, "LE"),
-  eq: compileBoundsSearch("-", true, "EQ", true)
-}
-
 },{}],27:[function(require,module,exports){
-"use strict"
-
-var bounds = require("binary-search-bounds")
-
-module.exports = createTrie
-
-function Trie(symbols, children, value) {
-  this.symbols = symbols
-  this.children = children
-  this.value = value
-}
-
-var proto = Trie.prototype
-
-proto.set = function(s, value) {
-  if(s.shape) {
-    var v = this
-    var n = s.shape[0]
-    for(var i=0; i<n; ++i) {
-      var c = s.get(i)
-      var j = bounds.ge(v.symbols, c)
-      if(j < v.symbols.length && v.symbols[j] === c) {
-        v = v.children[j]
-      } else {
-        var l = new Trie([], [], value)
-        for(var k=n-1; k>i; --k) {
-          l = new Trie([s.get(k)], [l])
-        }
-        v.symbols.splice(j, 0, c)
-        v.children.splice(j, 0, l)
-        return value
-      }
-    }
-    return v.value = value
-  } else {
-    var v = this
-    var n = s.length
-    for(var i=0; i<n; ++i) {
-      var c = s[i]
-      var j = bounds.ge(v.symbols, c)
-      if(j < v.symbols.length && v.symbols[j] === c) {
-        v = v.children[j]
-      } else {
-        var l = new Trie([], [], value)
-        for(var k=n-1; k>i; --k) {
-          l = new Trie([s[k]], [l])
-        }
-        v.symbols.splice(j, 0, c)
-        v.children.splice(j, 0, l)
-        return value
-      }
-    }
-    return v.value = value
-  }
-}
-
-proto.get = function(s) {
-  if(s.shape) {
-    var v = this
-    var n = s.shape[0]
-    for(var i=0; i<n; ++i) {
-      var c = s.get(i)
-      var j = bounds.eq(v.symbols, c)
-      if(j < 0) {
-        return
-      }
-      v = v.children[j]
-    }
-    return v.value
-  } else {
-    var v = this
-    var n = s.length
-    for(var i=0; i<n; ++i) {
-      var c = s[i]
-      var j = bounds.eq(v.symbols, c)
-      if(j < 0) {
-        return
-      }
-      v = v.children[j]
-    }
-    return v.value
-  }
-}
-
-function createTrie() {
-  return new Trie([],[])
-}
-},{"binary-search-bounds":26}],28:[function(require,module,exports){
 /* jshint node: true */
 /* global window: false */
 /* global navigator: false */
@@ -23245,7 +23285,7 @@ detect.moz = typeof navigator != 'undefined' && !!navigator.mozGetUserMedia;
 detect.browser = browser.name;
 detect.browserVersion = detect.version = browser.version;
 
-},{"detect-browser":30}],29:[function(require,module,exports){
+},{"detect-browser":29}],28:[function(require,module,exports){
 /**
   ### `rtc-core/genice`
 
@@ -23277,7 +23317,7 @@ module.exports = function(opts, callback) {
   callback(null, [].concat(iceServers || []));
 };
 
-},{}],30:[function(require,module,exports){
+},{}],29:[function(require,module,exports){
 var browsers = [
   [ 'chrome', /Chrom(?:e|ium)\/([0-9\.]+)(:?\s|$)/ ],
   [ 'firefox', /Firefox\/([0-9\.]+)(?:\s|$)/ ],
@@ -23311,7 +23351,7 @@ function isMatch(pair) {
   return !!pair[2];
 }
 
-},{}],31:[function(require,module,exports){
+},{}],30:[function(require,module,exports){
 var detect = require('./detect');
 var requiredFunctions = [
   'init'
@@ -23333,136 +23373,50 @@ module.exports = function(plugins) {
   return [].concat(plugins || []).filter(isSupported).filter(isValid)[0];
 }
 
-},{"./detect":28}],32:[function(require,module,exports){
-module.exports = {
-  // messenger events
-  dataEvent: 'data',
-  openEvent: 'open',
-  closeEvent: 'close',
-  errorEvent: 'error',
-
-  // messenger functions
-  writeMethod: 'write',
-  closeMethod: 'close',
-
-  // leave timeout (ms)
-  leaveTimeout: 3000
-};
-
-},{}],33:[function(require,module,exports){
-/* jshint node: true */
-'use strict';
-
-var extend = require('cog/extend');
-
+},{"./detect":27}],31:[function(require,module,exports){
 /**
-  #### announce
+  # rtc-pluggable-signaller
 
-  ```
-  /announce|%metadata%|{"id": "...", ... }
-  ```
+  By using `rtc-pluggable-signaller` in your code, you provide the ability
+  for your package to customize which signalling client it uses (and
+  thus have significant control) over how signalling operates in your
+  environment.
 
-  When an announce message is received by the signaller, the attached
-  object data is decoded and the signaller emits an `announce` message.
+  ## How it Works
+
+  The pluggable signaller looks in the provided `opts` for a `signaller`
+  attribute.  If the value of this attribute is a string, then it is
+  assumed that you wish to use the default
+  [`rtc-signaller`](https://github.com/rtc-io/rtc-signaller) in your
+  package.  If, however, it is not a string value then it will be passed
+  straight back as the signaller (assuming that you have provided an
+  object that is compliant with the rtc.io signalling API).
 
 **/
-module.exports = function(signaller) {
+module.exports = function(opts) {
+  var signaller = (opts || {}).signaller;
+  var messenger = (opts || {}).messenger || require('rtc-switchboard-messenger');
 
-  function dataAllowed(data) {
-    var cloned = extend({ allow: true }, data);
-    signaller('peer:filter', data.id, cloned);
-
-    return cloned.allow;
+  if (typeof signaller == 'string' || (signaller instanceof String)) {
+    return require('rtc-signaller')(messenger(signaller, opts), opts);
   }
 
-  return function(args, messageType, srcData, srcState, isDM) {
-    var data = args[0];
-    var peer;
-
-    // if we have valid data then process
-    if (data && data.id && data.id !== signaller.id) {
-      if (! dataAllowed(data)) {
-        return;
-      }
-      // check to see if this is a known peer
-      peer = signaller.peers.get(data.id);
-
-      // trigger the peer connected event to flag that we know about a
-      // peer connection. The peer has passed the "filter" check but may
-      // be announced / updated depending on previous connection status
-      signaller('peer:connected', data.id, data);
-
-      // if the peer is existing, then update the data
-      if (peer && (! peer.inactive)) {
-        // update the data
-        extend(peer.data, data);
-
-        // trigger the peer update event
-        return signaller('peer:update', data, srcData);
-      }
-
-      // create a new peer
-      peer = {
-        id: data.id,
-
-        // initialise the local role index
-        roleIdx: [data.id, signaller.id].sort().indexOf(data.id),
-
-        // initialise the peer data
-        data: {}
-      };
-
-      // initialise the peer data
-      extend(peer.data, data);
-
-      // reset inactivity state
-      clearTimeout(peer.leaveTimer);
-      peer.inactive = false;
-
-      // set the peer data
-      signaller.peers.set(data.id, peer);
-
-      // if this is an initial announce message (no vector clock attached)
-      // then send a announce reply
-      if (signaller.autoreply && (! isDM)) {
-        signaller
-          .to(data.id)
-          .send('/announce', signaller.attributes);
-      }
-
-      // emit a new peer announce event
-      return signaller('peer:announce', data, peer);
-    }
-  };
+  return signaller;
 };
 
-},{"cog/extend":20}],34:[function(require,module,exports){
-/* jshint node: true */
-'use strict';
-
-/**
-  ### signaller message handlers
-
-**/
-
-module.exports = function(signaller, opts) {
-  return {
-    announce: require('./announce')(signaller, opts)
-  };
-};
-
-},{"./announce":33}],35:[function(require,module,exports){
+},{"rtc-signaller":32,"rtc-switchboard-messenger":51}],32:[function(require,module,exports){
 /* jshint node: true */
 'use strict';
 
 var detect = require('rtc-core/detect');
-var defaults = require('cog/defaults');
 var extend = require('cog/extend');
 var mbus = require('mbus');
 var getable = require('cog/getable');
 var uuid = require('cuid');
 var pull = require('pull-stream');
 var pushable = require('pull-pushable');
+var prepare = require('rtc-signal/prepare');
+var createQueue = require('pull-pushable');
 
 // ready state constants
 var RS_DISCONNECTED = 0;
@@ -23472,7 +23426,7 @@ var RS_CONNECTED = 2;
 // initialise signaller metadata so we don't have to include the package.json
 // TODO: make this checkable with some kind of prepublish script
 var metadata = {
-  version: '5.2.2'
+  version: '6.2.1'
 };
 
 /**
@@ -23500,6 +23454,8 @@ var metadata = {
 
   <<< docs/signalflow-diagrams.md
 
+  <<< docs/identifying-participants.md
+
   ## Reference
 
   The `rtc-signaller` module is designed to be used primarily in a functional
@@ -23517,44 +23473,20 @@ var metadata = {
 
 **/
 module.exports = function(messenger, opts) {
-  // get the autoreply setting
-  var autoreply = (opts || {}).autoreply;
   var autoconnect = (opts || {}).autoconnect;
   var reconnect = (opts || {}).reconnect;
-
-  // initialise the metadata
-  var localMeta = {};
+  var queue = createQueue();
+  var connectionCount = 0;
 
   // create the signaller
-  var signaller = mbus('', (opts || {}).logger);
+  var signaller = require('rtc-signal/signaller')(opts, bufferMessage);
 
-  // initialise the id
-  var id = signaller.id = (opts || {}).id || uuid();
-
-  // initialise the attributes
-  var attributes = signaller.attributes = {
-    browser: detect.browser,
-    browserVersion: detect.browserVersion,
-    id: id,
-    agent: 'signaller@' + metadata.version
-  };
-
-  // create the peers map
-  var peers = signaller.peers = getable({});
-
-  // create the outbound message queue
-  var queue = require('pull-pushable')();
-
-  var processor;
+  var announced = false;
   var announceTimer = 0;
   var readyState = RS_DISCONNECTED;
 
-  function announceOnReconnect() {
-    signaller.announce();
-  }
-
-  function bufferMessage(args) {
-    queue.push(createDataLine(args));
+  function bufferMessage(message) {
+    queue.push(message);
 
     // if we are not connected (and should autoconnect), then attempt connection
     if (readyState === RS_DISCONNECTED && (autoconnect === undefined || autoconnect)) {
@@ -23562,29 +23494,10 @@ module.exports = function(messenger, opts) {
     }
   }
 
-  function createDataLine(args) {
-    return args.map(prepareArg).join('|');
-  }
-
-  function createMetadata() {
-    return extend({}, localMeta, { id: signaller.id });
-  }
-
   function handleDisconnect() {
     if (reconnect === undefined || reconnect) {
       setTimeout(connect, 50);
     }
-  }
-
-  function prepareArg(arg) {
-    if (typeof arg == 'object' && (! (arg instanceof String))) {
-      return JSON.stringify(arg);
-    }
-    else if (typeof arg == 'function') {
-      return null;
-    }
-
-    return arg;
   }
 
   /**
@@ -23609,6 +23522,9 @@ module.exports = function(messenger, opts) {
         return signaller('error', err);
       }
 
+      // increment the connection count
+      connectionCount += 1;
+
       // flag as connected
       readyState = RS_CONNECTED;
 
@@ -23618,10 +23534,11 @@ module.exports = function(messenger, opts) {
 
         // monitor disconnection
         pull.through(null, function() {
+          queue = createQueue();
           readyState = RS_DISCONNECTED;
           signaller('disconnected');
         }),
-        pull.drain(processor)
+        pull.drain(signaller._process)
       );
 
       // pass the queue to the sink
@@ -23633,25 +23550,12 @@ module.exports = function(messenger, opts) {
 
       // trigger the connected event
       signaller('connected');
+
+      // if this is a reconnection, then reannounce
+      if (announced && connectionCount > 1) {
+        signaller._announce();
+      }
     });
-  };
-
-  /**
-    ### signaller#send(message, data*)
-
-    Use the send function to send a message to other peers in the current
-    signalling scope (if announced in a room this will be a room, otherwise
-    broadcast to all peers connected to the signalling server).
-
-  **/
-  var send = signaller.send = function() {
-    // iterate over the arguments and stringify as required
-    // var metadata = { id: signaller.id };
-    var args = [].slice.call(arguments);
-
-    // inject the metadata
-    args.splice(1, 0, createMetadata());
-    bufferMessage(args);
   };
 
   /**
@@ -23712,54 +23616,13 @@ module.exports = function(messenger, opts) {
     ```
 
   **/
-  signaller.announce = function(data, sender) {
-
-    function sendAnnounce() {
-      (sender || send)('/announce', attributes);
-      signaller('local:announce', attributes);
-    }
-
-    // if we are already connected, then ensure we announce on reconnect
-    if (readyState === RS_CONNECTED) {
-      // always announce on reconnect
-      signaller.removeListener('connected', announceOnReconnect);
-      signaller.on('connected', announceOnReconnect);
-    }
-
+  signaller.announce = function(data) {
+    announced = true;
+    signaller._update(data);
     clearTimeout(announceTimer);
 
-    // update internal attributes
-    extend(attributes, data, { id: signaller.id });
-
     // send the attributes over the network
-    return announceTimer = setTimeout(sendAnnounce, (opts || {}).announceDelay || 10);
-  };
-
-  /**
-    ### isMaster(targetId)
-
-    A simple function that indicates whether the local signaller is the master
-    for it's relationship with peer signaller indicated by `targetId`.  Roles
-    are determined at the point at which signalling peers discover each other,
-    and are simply worked out by whichever peer has the lowest signaller id
-    when lexigraphically sorted.
-
-    For example, if we have two signaller peers that have discovered each
-    others with the following ids:
-
-    - `b11f4fd0-feb5-447c-80c8-c51d8c3cced2`
-    - `8a07f82e-49a5-4b9b-a02e-43d911382be6`
-
-    They would be assigned roles:
-
-    - `b11f4fd0-feb5-447c-80c8-c51d8c3cced2`
-    - `8a07f82e-49a5-4b9b-a02e-43d911382be6` (master)
-
-  **/
-  signaller.isMaster = function(targetId) {
-    var peer = peers.get(targetId);
-
-    return peer && peer.roleIdx !== 0;
+    return announceTimer = setTimeout(signaller._announce, (opts || {}).announceDelay || 10);
   };
 
   /**
@@ -23772,113 +23635,21 @@ module.exports = function(messenger, opts) {
   **/
   signaller.leave = signaller.close = function() {
     // send the leave signal
-    send('/leave', { id: id });
+    signaller.send('/leave', { id: signaller.id });
 
     // stop announcing on reconnect
     signaller.removeListener('disconnected', handleDisconnect);
-    signaller.removeListener('connected', announceOnReconnect);
+    signaller.removeListener('connected', signaller._announce);
 
     // end our current queue
     queue.end();
-
-    // create a new queue to buffer new messages
-    queue = pushable();
 
     // set connected to false
     readyState = RS_DISCONNECTED;
   };
 
-  /**
-    ### metadata(data?)
-
-    Get (pass no data) or set the metadata that is passed through with each
-    request sent by the signaller.
-
-    __NOTE:__ Regardless of what is passed to this function, metadata
-    generated by the signaller will **always** include the id of the signaller
-    and this cannot be modified.
-  **/
-  signaller.metadata = function(data) {
-    if (arguments.length === 0) {
-      return extend({}, localMeta);
-    }
-
-    localMeta = extend({}, data);
-  };
-
-  /**
-    ### to(targetId)
-
-    Use the `to` function to send a message to the specified target peer.
-    A large parge of negotiating a WebRTC peer connection involves direct
-    communication between two parties which must be done by the signalling
-    server.  The `to` function provides a simple way to provide a logical
-    communication channel between the two parties:
-
-    ```js
-    var send = signaller.to('e95fa05b-9062-45c6-bfa2-5055bf6625f4').send;
-
-    // create an offer on a local peer connection
-    pc.createOffer(
-      function(desc) {
-        // set the local description using the offer sdp
-        // if this occurs successfully send this to our peer
-        pc.setLocalDescription(
-          desc,
-          function() {
-            send('/sdp', desc);
-          },
-          handleFail
-        );
-      },
-      handleFail
-    );
-    ```
-
-  **/
-  signaller.to = function(targetId) {
-    // create a sender that will prepend messages with /to|targetId|
-    var sender = function() {
-      // get the peer (yes when send is called to make sure it hasn't left)
-      var peer = signaller.peers.get(targetId);
-      var args;
-
-      if (! peer) {
-        throw new Error('Unknown peer: ' + targetId);
-      }
-
-      // if the peer is inactive, then abort
-      if (peer.inactive) {
-        return;
-      }
-
-      args = [
-        '/to',
-        targetId
-      ].concat([].slice.call(arguments));
-
-      // inject metadata
-      args.splice(3, 0, createMetadata());
-      bufferMessage(args);
-    };
-
-    return {
-      announce: function(data) {
-        return signaller.announce(data, sender);
-      },
-
-      send: sender,
-    };
-  };
-
-  // initialise opts defaults
-  opts = defaults({}, opts, require('./defaults'));
-
-  // set the autoreply flag
-  signaller.autoreply = autoreply === undefined || autoreply;
-
-  // create the processor
-  signaller.process = processor = require('./processor')(signaller, opts);
+  // update the signaller agent
+  signaller._update({ agent: 'signaller@' + metadata.version });
 
   // autoconnect
   if (autoconnect === undefined || autoconnect) {
@@ -23888,7 +23659,7 @@ module.exports = function(messenger, opts) {
   return signaller;
 };
 
-},{"./defaults":32,"./processor":50,"cog/defaults":19,"cog/extend":20,"cog/getable":21,"cuid":36,"mbus":25,"pull-pushable":37,"pull-stream":44,"rtc-core/detect":28}],36:[function(require,module,exports){
+},{"cog/extend":21,"cog/getable":22,"cuid":33,"mbus":26,"pull-pushable":34,"pull-stream":41,"rtc-core/detect":27,"rtc-signal/prepare":48,"rtc-signal/signaller":50}],33:[function(require,module,exports){
 /**
  * cuid.js
  * Collision-resistant UID generator for browsers and node.
@@ -23896,7 +23667,7 @@ module.exports = function(messenger, opts) {
  * Safe for element IDs and server-side lookups.
  *
  * Extracted from CLCTR
- * 
+ *
  * Copyright (c) Eric Elliott 2012
  * MIT License
  */
@@ -23962,7 +23733,7 @@ module.exports = function(messenger, opts) {
 
       counter = safeCounter().toString(36).slice(-4);
 
-    return date.slice(-2) + 
+    return date.slice(-2) +
       counter + print + random;
   };
 
@@ -24000,7 +23771,7 @@ module.exports = function(messenger, opts) {
 
 }(this.applitude || this));
 
-},{}],37:[function(require,module,exports){
+},{}],34:[function(require,module,exports){
 var pull = require('pull-stream')
 
 module.exports = pull.Source(function (onClose) {
@@ -24045,7 +23816,7 @@ module.exports = pull.Source(function (onClose) {
 })
 
 
-},{"pull-stream":38}],38:[function(require,module,exports){
+},{"pull-stream":35}],35:[function(require,module,exports){
 
 var sources  = require('./sources')
 var sinks    = require('./sinks')
@@ -24073,7 +23844,7 @@ exports.Sink    = exports.pipeableSink   = u.Sink
 
 
 
-},{"./maybe":39,"./sinks":41,"./sources":42,"./throughs":43,"pull-core":40}],39:[function(require,module,exports){
+},{"./maybe":36,"./sinks":38,"./sources":39,"./throughs":40,"pull-core":37}],36:[function(require,module,exports){
 var u = require('pull-core')
 var prop = u.prop
 var id   = u.id
@@ -24131,7 +23902,7 @@ module.exports = function (pull) {
   return exports
 }
 
-},{"pull-core":40}],40:[function(require,module,exports){
+},{"pull-core":37}],37:[function(require,module,exports){
 exports.id = 
 function (item) {
   return item
@@ -24248,7 +24019,7 @@ function (createSink, cb) {
 }
 
 
-},{}],41:[function(require,module,exports){
+},{}],38:[function(require,module,exports){
 var drain = exports.drain = function (read, op, done) {
 
   ;(function next() {
@@ -24288,7 +24059,7 @@ var log = exports.log = function (read, done) {
 }
 
 
-},{}],42:[function(require,module,exports){
+},{}],39:[function(require,module,exports){
 
 var keys = exports.keys =
 function (object) {
@@ -24440,7 +24211,7 @@ function (start, createStream) {
 }
 
 
-},{}],43:[function(require,module,exports){
+},{}],40:[function(require,module,exports){
 (function (process){
 var u      = require('pull-core')
 var sources = require('./sources')
@@ -24736,7 +24507,7 @@ function (read, highWaterMark) {
 
 
 }).call(this,require('_process'))
-},{"./sinks":41,"./sources":42,"_process":3,"pull-core":40}],44:[function(require,module,exports){
+},{"./sinks":38,"./sources":39,"_process":94,"pull-core":37}],41:[function(require,module,exports){
 var sources  = require('./sources')
 var sinks    = require('./sinks')
 var throughs = require('./throughs')
@@ -24812,7 +24583,7 @@ exports.Sink    = exports.pipeableSink   = u.Sink
 
 
 
-},{"./maybe":45,"./sinks":47,"./sources":48,"./throughs":49,"pull-core":46}],45:[function(require,module,exports){
+},{"./maybe":42,"./sinks":44,"./sources":45,"./throughs":46,"pull-core":43}],42:[function(require,module,exports){
 var u = require('pull-core')
 var prop = u.prop
 var id   = u.id
@@ -24877,9 +24648,126 @@ module.exports = function (pull) {
   return exports
 }
 
-},{"pull-core":46}],46:[function(require,module,exports){
-arguments[4][40][0].apply(exports,arguments)
-},{"dup":40}],47:[function(require,module,exports){
+},{"pull-core":43}],43:[function(require,module,exports){
+exports.id = 
+function (item) {
+  return item
+}
+
+exports.prop = 
+function (map) {  
+  if('string' == typeof map) {
+    var key = map
+    return function (data) { return data[key] }
+  }
+  return map
+}
+
+exports.tester = function (test) {
+  if(!test) return exports.id
+  if('object' === typeof test
+    && 'function' === typeof test.test)
+      return test.test.bind(test)
+  return exports.prop(test) || exports.id
+}
+
+exports.addPipe = addPipe
+
+function addPipe(read) {
+  if('function' !== typeof read)
+    return read
+
+  read.pipe = read.pipe || function (reader) {
+    if('function' != typeof reader && 'function' != typeof reader.sink)
+      throw new Error('must pipe to reader')
+    var pipe = addPipe(reader.sink ? reader.sink(read) : reader(read))
+    return reader.source || pipe;
+  }
+  
+  read.type = 'Source'
+  return read
+}
+
+var Source =
+exports.Source =
+function Source (createRead) {
+  function s() {
+    var args = [].slice.call(arguments)
+    return addPipe(createRead.apply(null, args))
+  }
+  s.type = 'Source'
+  return s
+}
+
+
+var Through =
+exports.Through = 
+function (createRead) {
+  return function () {
+    var args = [].slice.call(arguments)
+    var piped = []
+    function reader (read) {
+      args.unshift(read)
+      read = createRead.apply(null, args)
+      while(piped.length)
+        read = piped.shift()(read)
+      return read
+      //pipeing to from this reader should compose...
+    }
+    reader.pipe = function (read) {
+      piped.push(read) 
+      if(read.type === 'Source')
+        throw new Error('cannot pipe ' + reader.type + ' to Source')
+      reader.type = read.type === 'Sink' ? 'Sink' : 'Through'
+      return reader
+    }
+    reader.type = 'Through'
+    return reader
+  }
+}
+
+var Sink =
+exports.Sink = 
+function Sink(createReader) {
+  return function () {
+    var args = [].slice.call(arguments)
+    if(!createReader)
+      throw new Error('must be createReader function')
+    function s (read) {
+      args.unshift(read)
+      return createReader.apply(null, args)
+    }
+    s.type = 'Sink'
+    return s
+  }
+}
+
+
+exports.maybeSink = 
+exports.maybeDrain = 
+function (createSink, cb) {
+  if(!cb)
+    return Through(function (read) {
+      var ended
+      return function (close, cb) {
+        if(close) return read(close, cb)
+        if(ended) return cb(ended)
+
+        createSink(function (err, data) {
+          ended = err || true
+          if(!err) cb(null, data)
+          else     cb(ended)
+        }) (read)
+      }
+    })()
+
+  return Sink(function (read) {
+    return createSink(cb) (read)
+  })()
+}
+
+
+},{}],44:[function(require,module,exports){
 var drain = exports.drain = function (read, op, done) {
 
   ;(function next() {
@@ -24921,17 +24809,24 @@ var log = exports.log = function (read, done) {
 }
 
 
-},{}],48:[function(require,module,exports){
+},{}],45:[function(require,module,exports){
 
 var keys = exports.keys =
 function (object) {
   return values(Object.keys(object))
 }
 
+function abortCb(cb, abort, onAbort) {
+  cb(abort)
+  onAbort && onAbort(abort === true ? null: abort)
+  return
+}
+
 var once = exports.once =
-function (value) {
+function (value, onAbort) {
   return function (abort, cb) {
-    if(abort) return cb(abort)
+    if(abort)
+      return abortCb(cb, abort, onAbort)
     if(value != null) {
       var _value = value; value = null
       cb(null, _value)
@@ -24941,15 +24836,20 @@ function (value) {
 }
 
 var values = exports.values = exports.readArray =
-function (array) {
+function (array, onAbort) {
+  if(!array)
+    return function (abort, cb) {
+      if(abort) return abortCb(cb, abort, onAbort)
+      return cb(true)
+    }
   if(!Array.isArray(array))
     array = Object.keys(array).map(function (k) {
       return array[k]
     })
   var i = 0
-  return function (end, cb) {
-    if(end)
-      return cb && cb(end)
+  return function (abort, cb) {
+    if(abort)
+      return abortCb(cb, abort, onAbort)
     cb(i >= array.length || null, array[i++])
   }
 }
@@ -25079,7 +24979,7 @@ function (start, createStream) {
 }
 
 
-},{}],49:[function(require,module,exports){
+},{}],46:[function(require,module,exports){
 (function (process){
 var u      = require('pull-core')
 var sources = require('./sources')
@@ -25212,29 +25112,39 @@ function (read, op, onEnd) {
 }
 
 var take = exports.take =
-function (read, test) {
+function (read, test, opts) {
+  opts = opts || {}
+  var last = opts.last || false // whether the first item for which !test(item) should still pass
   var ended = false
   if('number' === typeof test) {
+    last = true
     var n = test; test = function () {
-      return n --
+      return --n
     }
   }
 
-  return function (end, cb) {
-    if(ended) return cb(ended)
-    if(ended = end) return read(ended, cb)
-
-    read(null, function (end, data) {
-      if(ended = ended || end) return cb(ended)
-      if(!test(data)) {
-        ended = true
-        read(true, function (end, data) {
-          cb(ended, data)
-        })
-      }
-      else
-        cb(null, data)
+  function terminate (cb) {
+    read(true, function (err) {
+      last = false; cb(err || true)
     })
+  }
+
+  return function (end, cb) {
+    if(ended)            last ? terminate(cb) : cb(ended)
+    else if(ended = end) read(ended, cb)
+    else
+      read(null, function (end, data) {
+        if(ended = ended || end) {
+          //last ? terminate(cb) :
+          cb(ended)
+        }
+        else if(!test(data)) {
+          ended = true
+          last ? cb(null, data) : terminate(cb)
+        }
+        else
+          cb(null, data)
+      })
   }
 }
 
@@ -25285,13 +25195,24 @@ function (read, size) {
 var flatten = exports.flatten = function (read) {
   var _read
   return function (abort, cb) {
-    if(_read) nextChunk()
-    else      nextStream()
+    if (abort) {
+      _read ? _read(abort, function(err) {
+        read(err || abort, cb)
+      }) : read(abort, cb)
+    }
+    else if(_read) nextChunk()
+    else nextStream()
 
     function nextChunk () {
-      _read(null, function (end, data) {
-        if(end) nextStream()
-        else    cb(null, data)
+      _read(null, function (err, data) {
+        if (err === true) nextStream()
+        else if (err) {
+          read(true, function(abortErr) {
+            // TODO: what do we do with the abortErr?
+            cb(err)
+          })
+        }
+        else cb(null, data)
       })
     }
     function nextStream () {
@@ -25410,33 +25331,119 @@ function (read, mapper) {
 
 
 }).call(this,require('_process'))
-},{"./sinks":47,"./sources":48,"_process":3,"pull-core":46}],50:[function(require,module,exports){
-/* jshint node: true */
-'use strict';
+},{"./sinks":44,"./sources":45,"_process":94,"pull-core":43}],47:[function(require,module,exports){
+var extend = require('cog/extend');
 
+module.exports = function(signaller) {
+
+  function dataAllowed(data) {
+    var cloned = extend({ allow: true }, data);
+    signaller('peer:filter', data.id, cloned);
+
+    return cloned.allow;
+  }
+
+  return function(args, messageType, srcData, srcState, isDM) {
+    var data = args[0];
+    var peer;
+
+    // if we have valid data then process
+    if (data && data.id && data.id !== signaller.id) {
+      if (! dataAllowed(data)) {
+        return;
+      }
+      // check to see if this is a known peer
+      peer = signaller.peers.get(data.id);
+
+      // trigger the peer connected event to flag that we know about a
+      // peer connection. The peer has passed the "filter" check but may
+      // be announced / updated depending on previous connection status
+      signaller('peer:connected', data.id, data);
+
+      // if the peer is existing, then update the data
+      if (peer) {
+        // update the data
+        extend(peer.data, data);
+
+        // trigger the peer update event
+        return signaller('peer:update', data, srcData);
+      }
+
+      // create a new peer
+      peer = {
+        id: data.id,
+
+        // initialise the local role index
+        roleIdx: [data.id, signaller.id].sort().indexOf(data.id),
+
+        // initialise the peer data
+        data: {}
+      };
+
+      // initialise the peer data
+      extend(peer.data, data);
+
+      // set the peer data
+      signaller.peers.set(data.id, peer);
+
+      // if this is an initial announce message (no vector clock attached)
+      // then send a announce reply
+      if (signaller.autoreply && (! isDM)) {
+        signaller
+          .to(data.id)
+          .send('/announce', signaller.attributes);
+      }
+
+      // emit a new peer announce event
+      return signaller('peer:announce', data, peer);
+    }
+  };
+};
+
+},{"cog/extend":21}],48:[function(require,module,exports){
+/**
+  ### prepare
+
+  ```
+  fn(args) => String
+  ```
+
+  Convert an array of values into a pipe-delimited string.
+
+**/
+module.exports = function(args) {
+  return args.map(prepareArg).join('|');
+};
+
+function prepareArg(arg) {
+  if (typeof arg == 'object' && (! (arg instanceof String))) {
+    return JSON.stringify(arg);
+  }
+  else if (typeof arg == 'function') {
+    return null;
+  }
+
+  return arg;
+}
+
+},{}],49:[function(require,module,exports){
 var jsonparse = require('cog/jsonparse');
 
 /**
-  ### signaller process handling
+  ### process
 
-  When a signaller's underling messenger emits a `data` event this is
-  delegated to a simple message parser, which applies the following simple
-  logic:
+  ```
+  fn(signaller, opts) => fn(message)
+  ```
 
-  - Is the message a `/to` message. If so, see if the message is for this
-    signaller (checking the target id - 2nd arg).  If so pass the
-    remainder of the message onto the standard processing chain.  If not,
-    discard the message.
+  The core processing logic that is used to respond to incoming signaling
+  messages.
 
-  - Is the message a command message (prefixed with a forward slash). If so,
-    look for an appropriate message handler and pass the message payload on
-    to it.
-
-  - Finally, does the message match any patterns that we are listening for?
-    If so, then pass the entire message contents onto the registered handler.
 **/
 module.exports = function(signaller, opts) {
-  var handlers = require('./handlers')(signaller, opts);
+  var handlers = {
+    announce: require('./handlers/announce')(signaller, opts)
+  };
 
   function sendEvent(parts, srcState, data) {
     // initialise the event name
@@ -25498,12 +25505,12 @@ module.exports = function(signaller, opts) {
 
       // if we got data from ourself, then this is pretty dumb
       // but if we have then throw it away
-      if (srcData && srcData.id === signaller.id) {
+      if (srcData === signaller.id) {
         return console.warn('got data from ourself, discarding');
       }
 
       // get the source state
-      srcState = signaller.peers.get(srcData && srcData.id) || srcData;
+      srcState = signaller.peers.get(srcData) || srcData;
 
       // handle commands
       if (parts[0].charAt(0) === '/') {
@@ -25537,7 +25544,181 @@ module.exports = function(signaller, opts) {
   };
 };
 
-},{"./handlers":34,"cog/jsonparse":22}],51:[function(require,module,exports){
+},{"./handlers/announce":47,"cog/jsonparse":23}],50:[function(require,module,exports){
+var detect = require('rtc-core/detect');
+var extend = require('cog/extend');
+var getable = require('cog/getable');
+var cuid = require('cuid');
+var mbus = require('mbus');
+var prepare = require('./prepare');
+
+/**
+  ## `signaller(opts, bufferMessage) => mbus`
+
+  Create a base level signaller which is capable of processing
+  messages from an incoming source.  The signaller is capable of
+  sending messages outbound using the `bufferMessage` function
+  that is supplied to the signaller.
+
+**/
+module.exports = function(opts, bufferMessage) {
+  // get the autoreply setting
+  var autoreply = (opts || {}).autoreply;
+
+  // create the signaller mbus
+  var signaller = mbus('', (opts || {}).logger);
+
+  // initialise the peers
+  var peers = signaller.peers = getable({});
+
+  // initialise the signaller attributes
+  var attributes = signaller.attributes = {
+    browser: detect.browser,
+    browserVersion: detect.browserVersion,
+    agent: 'unknown'
+  };
+
+  function createToMessage(header) {
+    return function() {
+      var args = header.concat([].slice.call(arguments));
+
+      // inject the signaller.id
+      args.splice(3, 0, signaller.id);
+      bufferMessage(prepare(args));
+    }
+  }
+
+  // initialise the signaller id
+  signaller.id = (opts || {}).id || cuid();
+
+  /**
+    #### `isMaster(targetId) => Boolean`
+
+    A simple function that indicates whether the local signaller is the master
+    for it's relationship with peer signaller indicated by `targetId`.  Roles
+    are determined at the point at which signalling peers discover each other,
+    and are simply worked out by whichever peer has the lowest signaller id
+    when lexigraphically sorted.
+
+    For example, if we have two signaller peers that have discovered each
+    others with the following ids:
+
+    - `b11f4fd0-feb5-447c-80c8-c51d8c3cced2`
+    - `8a07f82e-49a5-4b9b-a02e-43d911382be6`
+
+    They would be assigned roles:
+
+    - `b11f4fd0-feb5-447c-80c8-c51d8c3cced2`
+    - `8a07f82e-49a5-4b9b-a02e-43d911382be6` (master)
+
+  **/
+  signaller.isMaster = function(targetId) {
+    var peer = peers.get(targetId);
+
+    return peer && peer.roleIdx !== 0;
+  };
+
+  /**
+    #### `send(args*)`
+
+    Prepare a message for sending, e.g.:
+
+    ```js
+    signaller.send('/foo', 'bar');
+    ```
+
+  **/
+  signaller.send = function() {
+    var args = [].slice.call(arguments);
+
+    // inject the metadata
+    args.splice(1, 0, signaller.id);
+
+    // send the message
+    bufferMessage(prepare(args));
+  };
+
+
+  /**
+    #### `to(targetId)`
+
+    Use the `to` function to send a message to the specified target peer.
+    A large parge of negotiating a WebRTC peer connection involves direct
+    communication between two parties which must be done by the signalling
+    server.  The `to` function provides a simple way to provide a logical
+    communication channel between the two parties:
+
+    ```js
+    var send = signaller.to('e95fa05b-9062-45c6-bfa2-5055bf6625f4').send;
+
+    // create an offer on a local peer connection
+    pc.createOffer(
+      function(desc) {
+        // set the local description using the offer sdp
+        // if this occurs successfully send this to our peer
+        pc.setLocalDescription(
+          desc,
+          function() {
+            send('/sdp', desc);
+          },
+          handleFail
+        );
+      },
+      handleFail
+    );
+    ```
+
+  **/
+  signaller.to = function(targetId) {
+    return {
+      send: createToMessage(['/to', targetId])
+    };
+  };
+
+  /**
+    ### Signaller Internals
+
+    The following functions are designed for use by signallers that are built
+    on top of this base signaller.
+  **/
+
+  /**
+    #### `_announce()`
+
+    The internal function that constructs the `/announce` message and triggers
+    the `local:announce` event.
+
+  **/
+  signaller._announce = function() {
+    signaller.send('/announce', attributes);
+    signaller('local:announce', attributes);
+  };
+
+  /**
+    #### `_process(data)`
+
+
+  **/
+  signaller._process = require('./process')(signaller);
+
+  /**
+    #### `_update`
+
+    Internal function that updates core announce attributes with
+    updated data.
+
+**/
+  signaller._update = function(data) {
+    extend(attributes, data, { id: signaller.id });
+  };
+
+  // set the autoreply flag
+  signaller.autoreply = autoreply === undefined || autoreply;
+
+  return signaller;
+};
+
+},{"./prepare":48,"./process":49,"cog/extend":21,"cog/getable":22,"cuid":33,"mbus":26,"rtc-core/detect":27}],51:[function(require,module,exports){
 var extend = require('cog/extend');
 
 /**
@@ -25551,16 +25732,17 @@ var extend = require('cog/extend');
 **/
 module.exports = function(switchboard, opts) {
   return require('messenger-ws')(switchboard, extend({
-    endpoints: ['/primus', '/']
+    endpoints: (opts || {}).endpoints || ['/']
   }, opts));
 };
 
-},{"cog/extend":20,"messenger-ws":52}],52:[function(require,module,exports){
+},{"cog/extend":21,"messenger-ws":52}],52:[function(require,module,exports){
 var WebSocket = require('ws');
 var wsurl = require('wsurl');
 var ps = require('pull-ws');
 var defaults = require('cog/defaults');
 var reTrailingSlash = /\/$/;
+var DEFAULT_FAILCODES = [];
 
 /**
   # messenger-ws
@@ -25577,22 +25759,25 @@ var reTrailingSlash = /\/$/;
 **/
 module.exports = function(url, opts) {
   var timeout = (opts || {}).timeout || 1000;
+  var failcodes = (opts || {}).failcodes || DEFAULT_FAILCODES;
   var endpoints = ((opts || {}).endpoints || ['/']).map(function(endpoint) {
     return url.replace(reTrailingSlash, '') + endpoint;
   });
 
   function connect(callback) {
     var queue = [].concat(endpoints);
-    var receivedData = false;
+    var isConnected = false;
+    var socket;
     var failTimer;
     var successTimer;
+    var removeListener;
+    var source;
 
     function attemptNext() {
-      var socket;
-
-      function registerMessage(evt) {
-        receivedData = true;
-        (socket.removeEventListener || socket.removeListener)('message', registerMessage);
+      // if we have already connected, do nothing
+      // NOTE: workaround for websockets/ws#489
+      if (isConnected) {
+        return;
       }
 
       // if we have no more valid endpoints, then erorr out
@@ -25601,31 +25786,51 @@ module.exports = function(url, opts) {
       }
 
       socket = new WebSocket(wsurl(queue.shift()));
+      socket.addEventListener('message', connect);
       socket.addEventListener('error', handleError);
-      socket.addEventListener('close', handleAbnormalClose);
-      socket.addEventListener('open', function() {
-        // create the source immediately to buffer any data
-        var source = ps.source(socket, opts);
+      socket.addEventListener('close', handleClose);
+      socket.addEventListener('open', handleOpen);
 
-        // monitor data flowing from the socket
-        socket.addEventListener('message', registerMessage);
-
-        successTimer = setTimeout(function() {
-          clearTimeout(failTimer);
-          callback(null, source, ps.sink(socket, opts));
-        }, 100);
-      });
-
+      removeListener = socket.removeEventListener || socket.removeListener;
       failTimer = setTimeout(attemptNext, timeout);
     }
 
-    function handleAbnormalClose(evt) {
-      // if this was a clean close do nothing
-      if (evt.wasClean && receivedData && queue.length === 0) {
+    function connect() {
+      // if we are already connected, abort
+      // NOTE: workaround for websockets/ws#489
+      if (isConnected) {
         return;
       }
 
-      return handleError();
+      // clear any monitors
+      clearTimeout(failTimer);
+      clearTimeout(successTimer);
+
+      // remove the close and error listeners as messenger-ws has done
+      // what it set out to do and that is create a connection
+      // NOTE: issue websockets/ws#489 causes means this fails in ws
+      removeListener.call(socket, 'open', handleOpen);
+      removeListener.call(socket, 'close', handleClose);
+      removeListener.call(socket, 'error', handleError);
+      removeListener.call(socket, 'message', connect);
+
+      // trigger the callback
+      isConnected = true;
+      callback(null, source, ps.sink(socket, opts));
+    }
+
+    function handleClose(evt) {
+      var clean = evt.wasClean && (
+        evt.code === undefined || failcodes.indexOf(evt.code) < 0
+      );
+
+      // if this was not a clean close, then handle error
+      if (! clean) {
+        return handleError();
+      }
+
+      clearTimeout(successTimer);
+      clearTimeout(failTimer);
     }
 
     function handleError() {
@@ -25634,13 +25839,21 @@ module.exports = function(url, opts) {
       attemptNext();
     }
 
+    function handleOpen() {
+      // create the source immediately to buffer any data
+      source = ps.source(socket, opts);
+
+      // monitor data flowing from the socket
+      successTimer = setTimeout(connect, 100);
+    }
+
     attemptNext();
   }
 
   return connect;
 };
 
-},{"cog/defaults":19,"pull-ws":53,"ws":58,"wsurl":59}],53:[function(require,module,exports){
+},{"cog/defaults":20,"pull-ws":53,"ws":58,"wsurl":59}],53:[function(require,module,exports){
 exports = module.exports = duplex;
 
 exports.source = require('./source');
@@ -25654,125 +25867,8 @@ function duplex (ws, opts) {
 };
 
 },{"./sink":56,"./source":57}],54:[function(require,module,exports){
-exports.id = 
-function (item) {
-  return item
-}
-
-exports.prop = 
-function (map) {  
-  if('string' == typeof map) {
-    var key = map
-    return function (data) { return data[key] }
-  }
-  return map
-}
-
-exports.tester = function (test) {
-  if(!test) return exports.id
-  if('object' === typeof test
-    && 'function' === typeof test.test)
-      return test.test.bind(test)
-  return exports.prop(test) || exports.id
-}
-
-exports.addPipe = addPipe
-
-function addPipe(read) {
-  if('function' !== typeof read)
-    return read
-
-  read.pipe = read.pipe || function (reader) {
-    if('function' != typeof reader && 'function' != typeof reader.sink)
-      throw new Error('must pipe to reader')
-    var pipe = addPipe(reader.sink ? reader.sink(read) : reader(read))
-    return reader.source || pipe;
-  }
-  
-  read.type = 'Source'
-  return read
-}
-
-var Source =
-exports.Source =
-function Source (createRead) {
-  function s() {
-    var args = [].slice.call(arguments)
-    return addPipe(createRead.apply(null, args))
-  }
-  s.type = 'Source'
-  return s
-}
-
-
-var Through =
-exports.Through = 
-function (createRead) {
-  return function () {
-    var args = [].slice.call(arguments)
-    var piped = []
-    function reader (read) {
-      args.unshift(read)
-      read = createRead.apply(null, args)
-      while(piped.length)
-        read = piped.shift()(read)
-      return read
-      //pipeing to from this reader should compose...
-    }
-    reader.pipe = function (read) {
-      piped.push(read) 
-      if(read.type === 'Source')
-        throw new Error('cannot pipe ' + reader.type + ' to Source')
-      reader.type = read.type === 'Sink' ? 'Sink' : 'Through'
-      return reader
-    }
-    reader.type = 'Through'
-    return reader
-  }
-}
-
-var Sink =
-exports.Sink = 
-function Sink(createReader) {
-  return function () {
-    var args = [].slice.call(arguments)
-    if(!createReader)
-      throw new Error('must be createReader function')
-    function s (read) {
-      args.unshift(read)
-      return createReader.apply(null, args)
-    }
-    s.type = 'Sink'
-    return s
-  }
-}
-
-
-exports.maybeSink = 
-exports.maybeDrain = 
-function (createSink, cb) {
-  if(!cb)
-    return Through(function (read) {
-      var ended
-      return function (close, cb) {
-        if(close) return read(close, cb)
-        if(ended) return cb(ended)
-
-        createSink(function (err, data) {
-          ended = err || true
-          if(!err) cb(null, data)
-          else     cb(ended)
-        }) (read)
-      }
-    })()
-
-  return Sink(function (read) {
-    return createSink(cb) (read)
-  })()
-}
-
-
-},{}],55:[function(require,module,exports){
+arguments[4][43][0].apply(exports,arguments)
+},{"dup":43}],55:[function(require,module,exports){
 module.exports = function(socket, callback) {
   var remove = socket && (socket.removeEventListener || socket.removeListener);
 
@@ -25860,7 +25956,7 @@ module.exports = pull.Sink(function(read, socket, opts) {
 });
 
 }).call(this,require('_process'))
-},{"./ready":55,"_process":3,"pull-core":54}],57:[function(require,module,exports){
+},{"./ready":55,"_process":94,"pull-core":54}],57:[function(require,module,exports){
 var pull = require('pull-core');
 var ready = require('./ready');
 
@@ -26076,7 +26172,7 @@ module.exports = function(pc) {
   }, 100);
 };
 
-},{"cog/logger":23}],61:[function(require,module,exports){
+},{"cog/logger":24}],61:[function(require,module,exports){
 /* jshint node: true */
 'use strict';
 
@@ -26085,6 +26181,8 @@ var queue = require('rtc-taskqueue');
 var cleanup = require('./cleanup');
 var monitor = require('./monitor');
 var throttle = require('cog/throttle');
+var pluck = require('whisk/pluck');
+var pluckCandidate = pluck('candidate', 'sdpMid', 'sdpMLineIndex');
 var CLOSED_STATES = [ 'closed', 'failed' ];
 var CHECKING_STATES = [ 'checking' ];
 
@@ -26177,18 +26275,22 @@ function couple(pc, targetId, signaller, opts) {
     signaller.removeListener('message:negotiate', handleNegotiateRequest);
   }
 
-  function handleCandidate(data) {
-    q.addIceCandidate(data);
-  }
-
-  function handleSdp(sdp, src) {
-    emit('sdp.remote', sdp);
-
+  function handleCandidate(data, src) {
     // if the source is unknown or not a match, then don't process
     if ((! src) || (src.id !== targetId)) {
       return;
     }
 
+    q.addIceCandidate(data);
+  }
+
+  function handleSdp(sdp, src) {
+    // if the source is unknown or not a match, then don't process
+    if ((! src) || (src.id !== targetId)) {
+      return;
+    }
+
+    emit('sdp.remote', sdp);
     q.setRemoteDescription(sdp);
   }
 
@@ -26229,19 +26331,10 @@ function couple(pc, targetId, signaller, opts) {
   }
 
   function handleLocalCandidate(evt) {
-    var data;
+    var data = evt.candidate && pluckCandidate(evt.candidate);
 
     if (evt.candidate) {
       resetDisconnectTimer();
-
-      // formulate into a specific data object so we won't be upset by plugin
-      // specific implementations of the candidate data format (i.e. extra fields)
-      data = {
-        candidate: evt.candidate.candidate,
-        sdpMid: evt.candidate.sdpMid,
-        sdpMLineIndex: evt.candidate.sdpMLineIndex
-      };
-
       emit('ice.local', data);
       signaller.to(targetId).send('/candidate', data);
       endOfCandidates = false;
@@ -26309,7 +26402,7 @@ function couple(pc, targetId, signaller, opts) {
 
 module.exports = couple;
 
-},{"./cleanup":60,"./monitor":65,"cog/logger":23,"cog/throttle":24,"mbus":25,"rtc-taskqueue":66}],62:[function(require,module,exports){
+},{"./cleanup":60,"./monitor":65,"cog/logger":24,"cog/throttle":25,"mbus":26,"rtc-taskqueue":66,"whisk/pluck":77}],62:[function(require,module,exports){
 /* jshint node: true */
 'use strict';
 
@@ -26321,7 +26414,7 @@ module.exports = couple;
 **/
 module.exports = require('rtc-core/detect');
 
-},{"rtc-core/detect":28}],63:[function(require,module,exports){
+},{"rtc-core/detect":27}],63:[function(require,module,exports){
 /* jshint node: true */
 'use strict';
 
@@ -26410,7 +26503,7 @@ exports.connectionConstraints = function(flags, constraints) {
   return out;
 };
 
-},{"./detect":62,"cog/defaults":19,"cog/logger":23}],64:[function(require,module,exports){
+},{"./detect":62,"cog/defaults":20,"cog/logger":24}],64:[function(require,module,exports){
 /* jshint node: true */
 
 'use strict';
@@ -26501,7 +26594,7 @@ exports.createConnection = function(opts, constraints) {
   return new PeerConnection(config, constraints);
 };
 
-},{"./couple":61,"./detect":62,"./generators":63,"cog/logger":23,"rtc-core/plugin":31}],65:[function(require,module,exports){
+},{"./couple":61,"./detect":62,"./generators":63,"cog/logger":24,"rtc-core/plugin":30}],65:[function(require,module,exports){
 /* jshint node: true */
 'use strict';
 
@@ -26591,23 +26684,26 @@ function getMappedState(state) {
   return stateMappings[state] || state;
 }
 
-},{"mbus":25}],66:[function(require,module,exports){
+},{"mbus":26}],66:[function(require,module,exports){
 var detect = require('rtc-core/detect');
 var findPlugin = require('rtc-core/plugin');
 var PriorityQueue = require('priorityqueuejs');
+var pluck = require('whisk/pluck');
+var pluckSessionDesc = pluck('sdp', 'type');
 
 // some validation routines
 var checkCandidate = require('rtc-validator/candidate');
 
 // the sdp cleaner
 var sdpclean = require('rtc-sdpclean');
+var parseSdp = require('rtc-sdp');
 
 var PRIORITY_LOW = 100;
 var PRIORITY_WAIT = 1000;
 
 // priority order (lower is better)
 var DEFAULT_PRIORITIES = [
-  'candidate',
+  'addIceCandidate',
   'setLocalDescription',
   'setRemoteDescription',
   'createAnswer',
@@ -26622,8 +26718,19 @@ var METHOD_EVENTS = {
   createAnswer: 'answer'
 };
 
+var MEDIA_MAPPINGS = {
+  data: 'application'
+};
+
 // define states in which we will attempt to finalize a connection on receiving a remote offer
 var VALID_RESPONSE_STATES = ['have-remote-offer', 'have-local-pranswer'];
+
+/**
+  Allows overriding of a function
+ **/
+function pluggable(pluginFn, defaultFn) {
+  return (pluginFn && typeof pluginFn == 'function' ? pluginFn : defaultFn);
+}
 
 /**
   # rtc-taskqueue
@@ -26641,23 +26748,25 @@ var VALID_RESPONSE_STATES = ['have-remote-offer', 'have-local-pranswer'];
 
 **/
 module.exports = function(pc, opts) {
+  opts = opts || {};
   // create the task queue
   var queue = new PriorityQueue(orderTasks);
   var tq = require('mbus')('', (opts || {}).logger);
 
   // initialise task importance
   var priorities = (opts || {}).priorities || DEFAULT_PRIORITIES;
+  var queueInterval = (opts || {}).interval || 10;
 
   // check for plugin usage
   var plugin = findPlugin((opts || {}).plugins);
 
   // initialise state tracking
   var checkQueueTimer = 0;
-  var currentTask;
   var defaultFail = tq.bind(tq, 'fail');
 
   // look for an sdpfilter function (allow slight mis-spellings)
   var sdpFilter = (opts || {}).sdpfilter || (opts || {}).sdpFilter;
+  var alwaysParse = (opts.sdpParseMode === 'always');
 
   // initialise session description and icecandidate objects
   var RTCSessionDescription = (opts || {}).RTCSessionDescription ||
@@ -26666,12 +26775,26 @@ module.exports = function(pc, opts) {
   var RTCIceCandidate = (opts || {}).RTCIceCandidate ||
     detect('RTCIceCandidate');
 
+  // Determine plugin overridable methods
+  var createIceCandidate = pluggable(plugin && plugin.createIceCandidate, function(data) {
+    return new RTCIceCandidate(data);
+  });
+
+  var createSessionDescription = pluggable(plugin && plugin.createSessionDescription, function(data) {
+    return new RTCSessionDescription(data);
+  });  
+
   function abortQueue(err) {
     console.error(err);
   }
 
   function applyCandidate(task, next) {
     var data = task.args[0];
+    // Allow selective filtering of ICE candidates
+    if (opts && opts.filterCandidate && !opts.filterCandidate(data)) {
+      tq('ice.remote.filtered', candidate);
+      return next();
+    }
     var candidate = data && data.candidate && createIceCandidate(data);
 
     function handleOk() {
@@ -26694,26 +26817,31 @@ module.exports = function(pc, opts) {
 
   function checkQueue() {
     // peek at the next item on the queue
-    var next = (! queue.isEmpty()) && (! currentTask) && queue.peek();
+    var next = (! queue.isEmpty()) && queue.peek();
     var ready = next && testReady(next);
-    var retry = (! queue.isEmpty()) && isNotClosed(pc);
 
     // reset the queue timer
     checkQueueTimer = 0;
 
     // if we don't have a task ready, then abort
     if (! ready) {
-      return retry && triggerQueueCheck();
+      // if we have a task and it has expired then dequeue it
+      if (next && (aborted(next) || expired(next))) {
+        tq('task.expire', next);
+        queue.deq();
+      }
+
+      return (! queue.isEmpty()) && isNotClosed(pc) && triggerQueueCheck();
     }
 
-    // update the current task (dequeue)
-    currentTask = queue.deq();
+    // properly dequeue task
+    next = queue.deq();
 
     // process the task
-    currentTask.fn(currentTask, function(err) {
-      var fail = currentTask.fail || defaultFail;
-      var pass = currentTask.pass;
-      var taskName = currentTask.name;
+    next.fn(next, function(err) {
+      var fail = next.fail || defaultFail;
+      var pass = next.pass;
+      var taskName = next.name;
 
       // if errored, fail
       if (err) {
@@ -26722,13 +26850,17 @@ module.exports = function(pc, opts) {
       }
 
       if (typeof pass == 'function') {
-        pass.apply(currentTask, [].slice.call(arguments, 1));
+        pass.apply(next, [].slice.call(arguments, 1));
       }
 
-      setTimeout(function() {
-        currentTask = null;
+      // Allow tasks to indicate that processing should continue immediately to the
+      // following task
+      if (next.immediate) {
+        if (checkQueueTimer) clearTimeout(checkQueueTimer);
+        return checkQueue();
+      } else {
         triggerQueueCheck();
-      }, 0);
+      }
     });
   }
 
@@ -26752,29 +26884,18 @@ module.exports = function(pc, opts) {
   }
 
   function completeConnection() {
+    // Clean any cached media types now that we have potentially new remote description
+    if (pc.__mediaTypes) {
+      delete pc.__mediaTypes;
+    }
+
     if (VALID_RESPONSE_STATES.indexOf(pc.signalingState) >= 0) {
       return tq.createAnswer();
     }
-  }
-
-  function createIceCandidate(data) {
-    if (plugin && typeof plugin.createIceCandidate == 'function') {
-      return plugin.createIceCandidate(data);
-    }
-
-    return new RTCIceCandidate(data);
-  }
-
-  function createSessionDescription(data) {
-    if (plugin && typeof plugin.createSessionDescription == 'function') {
-      return plugin.createSessionDescription(data);
-    }
-
-    return new RTCSessionDescription(data);
-  }
+  }  
 
   function emitSdp() {
-    tq('sdp.local', this.args[0]);
+    tq('sdp.local', pluckSessionDesc(this.args[0]));
   }
 
   function enqueue(name, handler, opts) {
@@ -26785,10 +26906,19 @@ module.exports = function(pc, opts) {
         args = args.map(opts.processArgs);
       }
 
+      var priority = priorities.indexOf(name);
+
       queue.enq({
         args: args,
         name: name,
         fn: handler,
+        priority: priority >= 0 ? priority : PRIORITY_LOW,
+        immediate: opts.immediate,
+        // If aborted, the task will be removed
+        aborted: false,
+
+        // record the time at which the task was queued
+        start: Date.now(),
 
         // initilaise any checks that need to be done prior
         // to the task executing
@@ -26818,8 +26948,8 @@ module.exports = function(pc, opts) {
       tq.apply(tq, [ ['negotiate', eventName, 'ok'], task.name ].concat(task.args));
       next.apply(null, [null].concat([].slice.call(arguments)));
     }
-
-    if (typeof fn != 'function') {
+  
+    if (! fn) {
       return next(new Error('cannot call "' + task.name + '" on RTCPeerConnection'));
     }
 
@@ -26829,6 +26959,14 @@ module.exports = function(pc, opts) {
       pc,
       task.args.concat(cbArgs).concat(isOffer ? generateConstraints() : [])
     );
+  }
+
+  function expired(task) {
+    return (typeof task.ttl == 'number') && (task.start + task.ttl < Date.now());
+  }
+
+  function aborted(task) {
+    return task && task.aborted;
   }
 
   function extractCandidateEventData(data) {
@@ -26884,15 +27022,41 @@ module.exports = function(pc, opts) {
       (data.__valid = checkCandidate(data.args[0]).length === 0);
   }
 
+  function isConnReadyForCandidate(pc, data) {
+    var sdpMid = data.args[0] && data.args[0].sdpMid;
+
+    // remap media types as appropriate
+    sdpMid = MEDIA_MAPPINGS[sdpMid] || sdpMid;
+
+    if (sdpMid === '')
+      return true;
+
+    // Allow parsing of SDP always if required
+    if (alwaysParse || !pc.__mediaTypes) {
+      var sdp = parseSdp(pc.remoteDescription && pc.remoteDescription.sdp);
+      // We only want to cache the SDP media types if we've received them, otherwise
+      // bad things can happen
+      var mediaTypes = sdp.getMediaTypes();
+      if (mediaTypes && mediaTypes.length > 0) {
+        pc.__mediaTypes = sdp.getMediaTypes();
+      }
+    }
+    // the candidate is valid if we know about the media type
+    var validMediaType = pc.__mediaTypes && pc.__mediaTypes.indexOf(sdpMid) >= 0;
+    // Otherwise we abort the task
+    if (!validMediaType) {
+      data.aborted = true;
+    }
+    return validMediaType;
+  }
+
   function orderTasks(a, b) {
     // apply each of the checks for each task
     var tasks = [a,b];
     var readiness = tasks.map(testReady);
     var taskPriorities = tasks.map(function(task, idx) {
       var ready = readiness[idx];
-      var priority = ready && priorities.indexOf(task.name);
-
-      return ready ? (priority >= 0 ? priority : PRIORITY_LOW) : PRIORITY_WAIT;
+      return ready ? task.priority : PRIORITY_WAIT;
     });
 
     return taskPriorities[1] - taskPriorities[0];
@@ -26907,13 +27071,17 @@ module.exports = function(pc, opts) {
 
   function triggerQueueCheck() {
     if (checkQueueTimer) return;
-    checkQueueTimer = setTimeout(checkQueue, 50);
+    checkQueueTimer = setTimeout(checkQueue, queueInterval);
   }
 
   // patch in the queue helper methods
   tq.addIceCandidate = enqueue('addIceCandidate', applyCandidate, {
     processArgs: extractCandidateEventData,
-    checks: [ hasLocalOrRemoteDesc, isValidCandidate ]
+    checks: [hasLocalOrRemoteDesc, isValidCandidate, isConnReadyForCandidate ],
+
+    // set ttl to 5s
+    ttl: 5000,
+    immediate: true
   });
 
   tq.setLocalDescription = enqueue('setLocalDescription', execMethod, {
@@ -26938,7 +27106,7 @@ module.exports = function(pc, opts) {
   return tq;
 };
 
-},{"mbus":25,"priorityqueuejs":67,"rtc-core/detect":28,"rtc-core/plugin":31,"rtc-sdpclean":68,"rtc-validator/candidate":69}],67:[function(require,module,exports){
+},{"mbus":26,"priorityqueuejs":67,"rtc-core/detect":27,"rtc-core/plugin":30,"rtc-sdp":68,"rtc-sdpclean":70,"rtc-validator/candidate":71,"whisk/pluck":77}],67:[function(require,module,exports){
 /**
  * Expose `PriorityQueue`.
  */
@@ -26970,7 +27138,7 @@ function PriorityQueue(comparator) {
  * @api public
  */
 PriorityQueue.DEFAULT_COMPARATOR = function(a, b) {
-  if (a instanceof Number && b instanceof Number) {
+  if (typeof a === 'number' && typeof b === 'number') {
     return a - b;
   } else {
     a = a.toString();
@@ -27027,11 +27195,11 @@ PriorityQueue.prototype.deq = function() {
     var left = (2 * current) + 1;
     var right = (2 * current) + 2;
 
-    if (left < size && this._compare(left, largest) > 0) {
+    if (left < size && this._compare(left, largest) >= 0) {
       largest = left;
     }
 
-    if (right < size && this._compare(right, largest) > 0) {
+    if (right < size && this._compare(right, largest) >= 0) {
       largest = right;
     }
 
@@ -27058,7 +27226,7 @@ PriorityQueue.prototype.enq = function(element) {
   while (current > 0) {
     var parent = Math.floor((current - 1) / 2);
 
-    if (this._compare(current, parent) < 0) break;
+    if (this._compare(current, parent) <= 0) break;
 
     this._swap(parent, current);
     current = parent;
@@ -27113,6 +27281,160 @@ PriorityQueue.prototype._swap = function(a, b) {
 };
 
 },{}],68:[function(require,module,exports){
+/* jshint node: true */
+'use strict';
+
+var nub = require('whisk/nub');
+var pluck = require('whisk/pluck');
+var flatten = require('whisk/flatten');
+var reLineBreak = /\r?\n/;
+var reTrailingNewlines = /\r?\n$/;
+
+// list sdp line types that are not "significant"
+var nonHeaderLines = [ 'a', 'c', 'b', 'k' ];
+var parsers = require('./parsers');
+
+/**
+  # rtc-sdp
+
+  This is a utility module for intepreting and patching sdp.
+
+  ## Usage
+
+  The `rtc-sdp` main module exposes a single function that is capable of
+  parsing lines of SDP, and providing an object allowing you to perform
+  operations on those parsed lines:
+
+  ```js
+  var sdp = require('rtc-sdp')(lines);
+  ```
+
+  The currently supported operations are listed below:
+
+**/
+module.exports = function(sdp) {
+  var ops = {};
+  var parsed = [];
+  var activeCollector;
+
+  // initialise the lines
+  var lines = sdp.split(reLineBreak).filter(Boolean).map(function(line) {
+    return line.split('=');
+  });
+
+  var inputOrder = nub(lines.filter(function(line) {
+    return line[0] && nonHeaderLines.indexOf(line[0]) < 0;
+  }).map(pluck(0)));
+
+  var findLine = ops.findLine = function(type, index) {
+    var lineData = parsed.filter(function(line) {
+      return line[0] === type;
+    })[index || 0];
+
+    return lineData && lineData[1];
+  };
+
+  // push into parsed sections
+  lines.forEach(function(line) {
+    var customParser = parsers[line[0]];
+
+    if (customParser) {
+      activeCollector = customParser(parsed, line);
+    }
+    else if (activeCollector) {
+      activeCollector = activeCollector(line);
+    }
+    else {
+      parsed.push(line);
+    }
+  });
+
+  /**
+    ### `sdp.addIceCandidate(data)`
+
+    Modify the sdp to include candidates as denoted by the data.
+
+**/
+  ops.addIceCandidate = function(data) {
+    var lineIndex = (data || {}).lineIndex || (data || {}).sdpMLineIndex;
+    var mLine = typeof lineIndex != 'undefined' && findLine('m', lineIndex);
+    var candidate = (data || {}).candidate;
+
+    // if we have the mLine add the new candidate
+    if (mLine && candidate) {
+      mLine.childlines.push(candidate.replace(reTrailingNewlines, '').split('='));
+    }
+  };
+
+  /**
+    ### `sdp.getMediaTypes() => []`
+
+    Retrieve the list of media types that have been defined in the sdp via
+    `m=` lines.
+  **/
+  ops.getMediaTypes = function() {
+    function getMediaType(data) {
+      return data[1].def.split(/\s/)[0];
+    }
+
+    return parsed.filter(function(parts) {
+      return parts[0] === 'm' && parts[1] && parts[1].def;
+    }).map(getMediaType);
+  };
+
+  /**
+    ### `sdp.toString()`
+
+    Convert the SDP structure that is currently retained in memory, into a string
+    that can be provided to a `setLocalDescription` (or `setRemoteDescription`)
+    WebRTC call.
+
+  **/
+  ops.toString = function() {
+    return parsed.map(function(line) {
+      return typeof line[1].toArray == 'function' ? line[1].toArray() : [ line ];
+    }).reduce(flatten).map(function(line) {
+      return line.join('=');
+    }).join('\n');
+  };
+
+  /**
+    ## SDP Filtering / Munging Functions
+
+    There are additional functions included in the module to assign with
+    performing "single-shot" SDP filtering (or munging) operations:
+
+  **/
+
+  return ops;
+};
+
+},{"./parsers":69,"whisk/flatten":74,"whisk/nub":76,"whisk/pluck":77}],69:[function(require,module,exports){
+/* jshint node: true */
+'use strict';
+
+exports.m = function(parsed, line) {
+  var media = {
+    def: line[1],
+    childlines: [],
+
+    toArray: function() {
+      return [
+        ['m', media.def ]
+      ].concat(media.childlines);
+    }
+  };
+
+  function addChildLine(childLine) {
+    media.childlines.push(childLine);
+    return addChildLine;
+  }
+
+  parsed.push([ 'm', media ]);
+
+  return addChildLine;
+};
+},{}],70:[function(require,module,exports){
 var validators = [
   [ /^(a\=candidate.*)$/, require('rtc-validator/candidate') ]
 ];
@@ -27169,10 +27491,9 @@ function detectLineBreak(input) {
   return match && match[0];
 }
 
-},{"rtc-validator/candidate":69}],69:[function(require,module,exports){
+},{"rtc-validator/candidate":71}],71:[function(require,module,exports){
 var debug = require('cog/logger')('rtc-validator');
 var rePrefix = /^(?:a=)?candidate:/;
-var reIP = /^(\d+\.){3}\d+$/;
 
 /*
 
@@ -27208,7 +27529,7 @@ var partValidation = [
   [ /\d+/, 'invalid component id', 'component-id' ],
   [ /(UDP|TCP)/i, 'transport must be TCP or UDP', 'transport' ],
   [ /\d+/, 'numeric priority expected', 'priority' ],
-  [ reIP, 'invalid connection address', 'connection-address' ],
+  [ require('reu/ip'), 'invalid connection address', 'connection-address' ],
   [ /\d+/, 'invalid connection port', 'connection-port' ],
   [ /typ/, 'Expected "typ" identifier', 'type classifier' ],
   [ /.+/, 'Invalid candidate type specified', 'candidate-type' ]
@@ -27256,16 +27577,153 @@ function validateParts(part, idx) {
   }
 }
 
-},{"cog/logger":23}],70:[function(require,module,exports){
+},{"cog/logger":24,"reu/ip":72}],72:[function(require,module,exports){
+/**
+  ### `reu/ip`
+
+  A regular expression that will match both IPv4 and IPv6 addresses.  This is a modified
+  regex (remove hostname matching) that was implemented by @Mikulas in
+  [this stackoverflow answer](http://stackoverflow.com/a/9209720/96656).
+
+**/
+module.exports = /^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])$|^(?:(?:(?:(?:(?:(?:(?:[0-9a-fA-F]{1,4})):){6})(?:(?:(?:(?:(?:[0-9a-fA-F]{1,4})):(?:(?:[0-9a-fA-F]{1,4})))|(?:(?:(?:(?:(?:25[0-5]|(?:[1-9]|1[0-9]|2[0-4])?[0-9]))\.){3}(?:(?:25[0-5]|(?:[1-9]|1[0-9]|2[0-4])?[0-9])))))))|(?:(?:::(?:(?:(?:[0-9a-fA-F]{1,4})):){5})(?:(?:(?:(?:(?:[0-9a-fA-F]{1,4})):(?:(?:[0-9a-fA-F]{1,4})))|(?:(?:(?:(?:(?:25[0-5]|(?:[1-9]|1[0-9]|2[0-4])?[0-9]))\.){3}(?:(?:25[0-5]|(?:[1-9]|1[0-9]|2[0-4])?[0-9])))))))|(?:(?:(?:(?:(?:[0-9a-fA-F]{1,4})))?::(?:(?:(?:[0-9a-fA-F]{1,4})):){4})(?:(?:(?:(?:(?:[0-9a-fA-F]{1,4})):(?:(?:[0-9a-fA-F]{1,4})))|(?:(?:(?:(?:(?:25[0-5]|(?:[1-9]|1[0-9]|2[0-4])?[0-9]))\.){3}(?:(?:25[0-5]|(?:[1-9]|1[0-9]|2[0-4])?[0-9])))))))|(?:(?:(?:(?:(?:(?:[0-9a-fA-F]{1,4})):){0,1}(?:(?:[0-9a-fA-F]{1,4})))?::(?:(?:(?:[0-9a-fA-F]{1,4})):){3})(?:(?:(?:(?:(?:[0-9a-fA-F]{1,4})):(?:(?:[0-9a-fA-F]{1,4})))|(?:(?:(?:(?:(?:25[0-5]|(?:[1-9]|1[0-9]|2[0-4])?[0-9]))\.){3}(?:(?:25[0-5]|(?:[1-9]|1[0-9]|2[0-4])?[0-9])))))))|(?:(?:(?:(?:(?:(?:[0-9a-fA-F]{1,4})):){0,2}(?:(?:[0-9a-fA-F]{1,4})))?::(?:(?:(?:[0-9a-fA-F]{1,4})):){2})(?:(?:(?:(?:(?:[0-9a-fA-F]{1,4})):(?:(?:[0-9a-fA-F]{1,4})))|(?:(?:(?:(?:(?:25[0-5]|(?:[1-9]|1[0-9]|2[0-4])?[0-9]))\.){3}(?:(?:25[0-5]|(?:[1-9]|1[0-9]|2[0-4])?[0-9])))))))|(?:(?:(?:(?:(?:(?:[0-9a-fA-F]{1,4})):){0,3}(?:(?:[0-9a-fA-F]{1,4})))?::(?:(?:[0-9a-fA-F]{1,4})):)(?:(?:(?:(?:(?:[0-9a-fA-F]{1,4})):(?:(?:[0-9a-fA-F]{1,4})))|(?:(?:(?:(?:(?:25[0-5]|(?:[1-9]|1[0-9]|2[0-4])?[0-9]))\.){3}(?:(?:25[0-5]|(?:[1-9]|1[0-9]|2[0-4])?[0-9])))))))|(?:(?:(?:(?:(?:(?:[0-9a-fA-F]{1,4})):){0,4}(?:(?:[0-9a-fA-F]{1,4})))?::)(?:(?:(?:(?:(?:[0-9a-fA-F]{1,4})):(?:(?:[0-9a-fA-F]{1,4})))|(?:(?:(?:(?:(?:25[0-5]|(?:[1-9]|1[0-9]|2[0-4])?[0-9]))\.){3}(?:(?:25[0-5]|(?:[1-9]|1[0-9]|2[0-4])?[0-9])))))))|(?:(?:(?:(?:(?:(?:[0-9a-fA-F]{1,4})):){0,5}(?:(?:[0-9a-fA-F]{1,4})))?::)(?:(?:[0-9a-fA-F]{1,4})))|(?:(?:(?:(?:(?:(?:[0-9a-fA-F]{1,4})):){0,6}(?:(?:[0-9a-fA-F]{1,4})))?::))))$/;
+
+},{}],73:[function(require,module,exports){
+module.exports = function(a, b) {
+  return arguments.length > 1 ? a === b : function(b) {
+    return a === b;
+  };
+};
+
+},{}],74:[function(require,module,exports){
+/**
+  ## flatten
+
+  Flatten an array using `[].reduce`
+
+  <<< examples/flatten.js
+
+**/
+
+module.exports = function(a, b) {
+  // if a is not already an array, make it one
+  a = Array.isArray(a) ? a : [a];
+
+  // concat b with a
+  return a.concat(b);
+};
+},{}],75:[function(require,module,exports){
+module.exports = function(comparator) {
+  return function(input) {
+    var output = [];
+    for (var ii = 0, count = input.length; ii < count; ii++) {
+      var found = false;
+      for (var jj = output.length; jj--; ) {
+        found = found || comparator(input[ii], output[jj]);
+      }
+
+      if (found) {
+        continue;
+      }
+
+      output[output.length] = input[ii];
+    }
+
+    return output;
+  };
+}
+},{}],76:[function(require,module,exports){
+/**
+  ## nub
+
+  Return only the unique elements of the list.
+
+  <<< examples/nub.js
+
+**/
+
+module.exports = require('./nub-by')(require('./equality'));
+},{"./equality":73,"./nub-by":75}],77:[function(require,module,exports){
+/**
+  ## pluck
+
+  Extract targeted properties from a source object. When a single property
+  value is requested, then just that value is returned.
+
+  In the case where multiple properties are requested (in a varargs calling
+  style) a new object will be created with the requested properties copied
+  across.
+
+  __NOTE:__ In the second form extraction of nested properties is
+  not supported.
+
+  <<< examples/pluck.js
+
+**/
+module.exports = function() {
+  var fields = [];
+
+  function extractor(parts, maxIdx) {
+    return function(item) {
+      var partIdx = 0;
+      var val = item;
+
+      do {
+        val = val && val[parts[partIdx++]];
+      } while (val && partIdx <= maxIdx);
+
+      return val;
+    };
+  }
+
+  [].slice.call(arguments).forEach(function(path) {
+    var parts = typeof path == 'number' ? [ path ] : (path || '').split('.');
+
+    fields[fields.length] = {
+      name: parts[0],
+      parts: parts,
+      maxIdx: parts.length - 1
+    };
+  });
+
+  if (fields.length <= 1) {
+    return extractor(fields[0].parts, fields[0].maxIdx);
+  }
+  else {
+    return function(item) {
+      var data = {};
+
+      for (var ii = 0, len = fields.length; ii < len; ii++) {
+        data[fields[ii].name] = extractor([fields[ii].parts[0]], 0)(item);
+      }
+
+      return data;
+    };
+  }
+};
+},{}],78:[function(require,module,exports){
+var detect = require('rtc-core/detect');
 var extend = require('cog/extend');
 var OPT_DEFAULTS = {
   target: 'rtc.io screenshare'
 };
 
-module.exports = function(opts) {
+/**
+  Returns true if we should use Chrome screensharing
+ **/
+exports.supported = function() {
+  return detect.browser === 'chrome';
+}
+
+/**
+  Creates the share context.
+ **/
+exports.share = function(opts) {
   var extension = require('chromex/client')(extend({}, OPT_DEFAULTS, opts, {
     target: (opts || {}).chromeExtension
   }));
+
+  extension.type = 'google/chrome';
 
   extension.available = function(callback) {
     return extension.satisfies((opts || {}).version, callback);
@@ -27283,7 +27741,7 @@ module.exports = function(opts) {
       }
 
       // pass the constraints through
-      return callback(null, {
+      return callback(null, extend({
         audio: false,
         video: {
           mandatory: {
@@ -27294,19 +27752,20 @@ module.exports = function(opts) {
             minFrameRate: 1,
             maxFrameRate: 5
           },
-
           optional: []
         }
-      });
+      }, opts.constraints));
+    });
+  };
+
+  extension.cancel = function() {
+    extension.sendCommand('cancel', function(err) {
     });
   };
 
   return extension;
 };
-
-},{"chromex/client":73,"cog/extend":80}],71:[function(require,module,exports){
-var detect = require('rtc-core/detect');
-
+},{"chromex/client":81,"cog/extend":88,"rtc-core/detect":90}],79:[function(require,module,exports){
 /**
   # rtc-screenshare
 
@@ -27321,11 +27780,9 @@ var detect = require('rtc-core/detect');
 
   ## Template Extension
 
-  Including in this repository is a template extension that interacts with the
-  [`chrome.desktopCapture`](https://developer.chrome.com/extensions/desktopCapture)
-  API, and communicates with this module through `postMessage` calls.
-
-  An early, installable version of the extension is available in the
+  Template extension
+  [source is available](https://github.com/rtc-io/rtc-screenshare-extension) and
+  an early, installable version of the extension is available in the
   [Chrome Web Store](https://chrome.google.com/webstore/detail/webrtc-screen-sharing-for/einjngigaajacmojcohefgmnhhdnllic).
 
   __NOTE:__ The extension is not publicly available yet, but using the direct link
@@ -27333,23 +27790,30 @@ var detect = require('rtc-core/detect');
 
   ## Give it a Try
 
-  Once you have the plugin installed, you should be able to take the screenshare
-  module for a run using [requirebin](https://requirebin.com/?gist=6dcd5ced3964f0b3c40a)
-
-  This is, however, an early version of both the package and chrome extension so
-  we will be working through any
-  [issues](https://github.com/rtc-io/rtc-screenshare/issues) before removing
-  the __experimental__ status.
+  We've created a simple demo showing how to broadcast your screen and made it
+  available here at <https://rtc.io/screeny/>
+  ([source](https://github.com/rtc-io/demo-screenshare)).
 
 **/
-module.exports = (detect.moz ? require('./moz') : require('./chrome'));
+module.exports = function() {
+  console.error('Screensharing is not supported on this device');
+};
 
-},{"./chrome":70,"./moz":72,"rtc-core/detect":81}],72:[function(require,module,exports){
+var handlers = [require('./chrome'), require('./moz')];
+for (var i = 0; i < handlers.length; i++) {
+  var handler = handlers[i];
+  if (handler && handler.supported()) {
+    module.exports = handler.share;
+    break;
+  }
+}
+},{"./chrome":78,"./moz":80}],80:[function(require,module,exports){
+var detect = require('rtc-core/detect');
+var EventEmitter = require('eventemitter3');
 var targets = {};
 
 targets.window = function(callback) {
   callback(null, {
-    audio: false,
     video: {
       mozMediaSource: 'window',
       mediaSource: 'window'
@@ -27357,24 +27821,51 @@ targets.window = function(callback) {
   });
 };
 
-module.exports = function(target, callback) {
-  var capture = targets[target];
-
-  if (typeof capture != 'function') {
-    return callback(new Error(target + ' capture not implemented'));
-  }
-
-  return capture(callback);
+/**
+  Returns true if we should use Firefox screensharing
+ **/
+exports.supported = function() {
+  return detect.moz;
 };
 
-},{}],73:[function(require,module,exports){
+exports.share = function(opts) {
+  opts = opts || {};
+  var target = opts.target || 'window';
+  var capture = targets[target];
+
+  var extension = new EventEmitter();
+
+  extension.type = 'mozilla/firefox';
+
+  extension.available = function(callback) {
+    if (typeof capture != 'function') {
+      return callback(new Error(target + ' capture not implemented'), 'not-supported');
+    }
+    return callback();
+  };
+
+  extension.request = function(callback) {
+    return capture(callback);
+  };
+
+  extension.cancel = function(callback) {
+
+  };
+
+  extension.emit('activate');
+
+  return extension;
+};
+},{"eventemitter3":89,"rtc-core/detect":90}],81:[function(require,module,exports){
 var defaults = require('cog/defaults');
 var slimver = require('slimver');
 var EventEmitter = require('eventemitter3');
 var kgo = require('kgo');
 var cuid = require('cuid');
+var tickInit = Date.now();
 
 module.exports = function(opts) {
+  var initDelay = (opts || {}).initDelay || 100;
   var extension = new EventEmitter();
   var pendingCallbacks = {};
 
@@ -27388,9 +27879,9 @@ module.exports = function(opts) {
   }
 
   function checkSatisfies(range, callback) {
-    if (typeof version == 'function') {
-      callback = version;
-      version = null;
+    if (typeof range == 'function') {
+      callback = range;
+      range = '*';
     }
 
     kgo
@@ -27415,6 +27906,8 @@ module.exports = function(opts) {
     var responseId = data && data.responseId;
     var handler = responseId && pendingCallbacks[responseId];
 
+    console.log('received message: ', evt);
+
     if (typeof handler == 'function') {
       pendingCallbacks[responseId] = null;
 
@@ -27423,11 +27916,28 @@ module.exports = function(opts) {
         return handler(new Error(data.error));
       }
 
-      handler(null, data.payload);
+      // if the extension component is sending us all the args, use them
+      if (data.args) {
+        handler.apply(null, [null].concat(data.args));
+      }
+      // otherwise, default to using the payload
+      else {
+        handler(null, data.payload);
+      }
     }
     else if (data.message) {
       extension.emit(data.message, data);
     }
+  }
+
+  function ready(callback) {
+    var diff = Date.now() - tickInit;
+
+    if (diff > initDelay) {
+      return callback()
+    }
+
+    return setTimeout(callback, initDelay - diff);
   }
 
   function normalizeVersion(version) {
@@ -27453,18 +27963,20 @@ module.exports = function(opts) {
         }
       }
 
-      if (timeout) {
-        setTimeout(checkProcessed, timeout);
-      }
+      ready(function() {
+        if (timeout) {
+          setTimeout(checkProcessed, timeout);
+        }
 
-      // regsiter the pending callback
-      pendingCallbacks[id] = cb;
-      window.postMessage({
-        requestId: id,
-        target: (opts || {}).target,
-        command: command,
-        opts: requestOpts
-      }, '*');
+        // regsiter the pending callback
+        pendingCallbacks[id] = cb;
+        window.postMessage({
+          requestId: id,
+          target: (opts || {}).target,
+          command: command,
+          opts: requestOpts
+        }, '*');
+      });
     }
 
     if (typeof requestOpts == 'function') {
@@ -27486,9 +27998,9 @@ module.exports = function(opts) {
   return extension;
 };
 
-},{"cog/defaults":79,"cuid":74,"eventemitter3":75,"kgo":76,"slimver":78}],74:[function(require,module,exports){
-arguments[4][36][0].apply(exports,arguments)
-},{"dup":36}],75:[function(require,module,exports){
+},{"cog/defaults":87,"cuid":82,"eventemitter3":83,"kgo":84,"slimver":86}],82:[function(require,module,exports){
+arguments[4][33][0].apply(exports,arguments)
+},{"dup":33}],83:[function(require,module,exports){
 'use strict';
 
 /**
@@ -27719,10 +28231,9 @@ EventEmitter.EventEmitter3 = EventEmitter;
 //
 module.exports = EventEmitter;
 
-},{}],76:[function(require,module,exports){
+},{}],84:[function(require,module,exports){
 var run = require('./run'),
-    EventEmitter = require('events').EventEmitter,
-    fnRegex = /^function.*?\((.*?)\)/;
+    EventEmitter = require('events').EventEmitter;
 
 var defer = typeof setImmediate === 'function' ? setImmediate : setTimeout;
 
@@ -27730,13 +28241,16 @@ function newKgo(){
     var returnlessId = 0,
         tasks = {},
         results = {},
-        errorHandlers = {},
         inFlight,
         defaultsDefined;
 
     function kgoFn(){
+        if(!arguments.length){
+            throw new Error('kgo must must be called with a task or defaults');
+        }
+
         if(inFlight){
-            throw "No tasks or defaults may be set after kgo is in flight";
+            throw new Error('No tasks or defaults may be set after kgo is in flight');
         }
 
         var argIndex = 0;
@@ -27752,17 +28266,17 @@ function newKgo(){
         if(!names.length){
             names.push((returnlessId++).toString() + '__returnless');
         }
-            
+
         if(typeof arguments[argIndex] === 'object' && !Array.isArray(arguments[argIndex])){
             var defaults = arguments[argIndex];
 
             if(defaultsDefined){
-                throw "Defaults may be defined only once per kgo";
+                throw  new Error('Defaults may be defined only once per kgo');
             }
 
             for(var key in defaults){
                 if(key in tasks){
-                    throw "A task is already defined for " + key;
+                    throw  new Error('A task is already defined for ' + key);
                 }
                 results[key] = defaults[key];
             }
@@ -27785,15 +28299,31 @@ function newKgo(){
 
         for(var i = 0; i < names.length; i++){
             if(names[i] in results){
-                throw "A default with the same name as this task (" + names[i] + ") has already been set";
+                throw  new Error('A default with the same name as this task (' + names[i] + ') has already been set');
             }
         }
 
-        tasks[names] = {
-            names: names,
-            args: dependencies || [],
-            fn: fn
-        };
+        if(!dependencies){
+            dependencies = [];
+        }
+
+        dependencies.map(function(dependency){
+            if(typeof dependency !== 'string'){
+                throw  new Error('dependency was not a string: ' + dependency + ' in task: ' + names);
+            }
+        });
+
+        names.map(function(name){
+            if(name in tasks){
+                throw  new Error('A task with the same name (' + name + ') is aready defined');
+            }
+
+            tasks[name] = {
+                names: names,
+                args: dependencies,
+                fn: fn
+            };
+        });
 
         return kgoFn;
     }
@@ -27813,53 +28343,38 @@ function newKgo(){
 }
 
 module.exports = newKgo;
-},{"./run":77,"events":2}],77:[function(require,module,exports){
+},{"./run":85,"events":93}],85:[function(require,module,exports){
 var ignoreDependency = /^\!.+/;
-
-function rotate90(array){
-  // transpose from http://www.codesuck.com/2012/02/transpose-javascript-array-in-one-line.html
-  return Object.keys(array[0]).map(function (c) { return array.map(function (r) { return r[c]; }); });
-}
 
 function Step(task, args, done){
     this._task = task;
     this._args = args;
     this._done = done;
 }
-Step.prototype._count = 1;
-Step.prototype._runs = 0;
 Step.prototype.run = function(){
     var step = this,
-        results = [],
         didError;
 
     this._task.fn.apply(this, this._args.concat([function(error){
-        var stepResults = Array.prototype.slice.call(arguments, 1);
-        results.push(stepResults);
-        step._runs++;
+        var result = Array.prototype.slice.call(arguments, 1);
         if(error){
             didError = true;
             step.done(error);
-        }else if(!didError && step._runs === step._count){
-            step.done(null, results);
+        }else if(!didError){
+            step.done(null, result);
         }
     }]));
 };
-Step.prototype.count = function(number){
-    this._parallel = true;
-    this._count = number;
-};
-Step.prototype.done = function(error, results){
+Step.prototype.done = function(error, result){
     if(error){
         return this._done(error);
     }
-    this._done(null, this._parallel ? rotate90(results) : results[0]);
+    this._done(null, result);
 };
 
 function runTask(task, results, aboutToRun, done){
     var names = task.names,
         dependants = task.args,
-        taskFunction = task.fn,
         args = [];
 
     if(dependants){
@@ -27890,20 +28405,33 @@ function runTask(task, results, aboutToRun, done){
 }
 
 function run(tasks, results, emitter){
-    var currentTask;
+    var currentTask,
+        noMoreTasks = true;
+
+    if(emitter._complete){
+        return;
+    }
 
     for(var key in tasks){
+        noMoreTasks = false;
         currentTask = tasks[key];
 
         runTask(
             currentTask,
             results,
             function(names){
-                delete tasks[names];
+                names.map(function(name){
+                    delete tasks[name];
+                });
             },
             function(names, error, taskResults){
+                if(emitter._complete){
+                    return;
+                }
                 if(error){
+                    emitter._complete = true;
                     emitter.emit('error', error, names);
+                    emitter.emit('complete');
                     return;
                 }
 
@@ -27915,20 +28443,38 @@ function run(tasks, results, emitter){
             }
         );
     }
+
+    if(noMoreTasks && Object.keys(results).length === emitter._taskCount){
+        emitter._complete = true;
+        emitter.emit('complete');
+    }
 }
 
 function cloneAndRun(tasks, results, emitter){
     var todo = {};
 
+    emitter._taskCount = Object.keys(results).length;
+
+    function checkDependencyIsDefined(dependencyName){
+        dependencyName = dependencyName.match(/\!?(.*)/)[1];
+
+        if(!(dependencyName in tasks) && !(dependencyName in results)){
+            throw  new Error('No task or result has been defined for dependency: ' + dependencyName);
+        }
+    }
+
     for(var key in tasks){
         todo[key] = tasks[key];
+        emitter._taskCount ++;
+
+        tasks[key].args.map(checkDependencyIsDefined);
     }
 
     run(todo, results, emitter);
 }
 
 module.exports = cloneAndRun;
-},{}],78:[function(require,module,exports){
+},{}],86:[function(require,module,exports){
 var OFFSET = Math.pow(2, 16);
 var MAXSEG = OFFSET - 1;
 var MAXVER = Math.pow(OFFSET, 3) - 1;
@@ -28113,12 +28659,673 @@ slim.unpack = slim.stringify = unpack;
 
 module.exports = slim;
 
-},{}],79:[function(require,module,exports){
-arguments[4][19][0].apply(exports,arguments)
-},{"dup":19}],80:[function(require,module,exports){
+},{}],87:[function(require,module,exports){
 arguments[4][20][0].apply(exports,arguments)
-},{"dup":20}],81:[function(require,module,exports){
-arguments[4][28][0].apply(exports,arguments)
-},{"detect-browser":82,"dup":28}],82:[function(require,module,exports){
-arguments[4][30][0].apply(exports,arguments)
-},{"dup":30}]},{},[4]);
+},{"dup":20}],88:[function(require,module,exports){
+arguments[4][21][0].apply(exports,arguments)
+},{"dup":21}],89:[function(require,module,exports){
+'use strict';
+
+//
+// We store our EE objects in a plain object whose properties are event names.
+// If `Object.create(null)` is not supported we prefix the event names with a
+// `~` to make sure that the built-in object properties are not overridden or
+// used as an attack vector.
+// We also assume that `Object.create(null)` is available when the event name
+// is an ES6 Symbol.
+//
+var prefix = typeof Object.create !== 'function' ? '~' : false;
+
+/**
+ * Representation of a single EventEmitter function.
+ *
+ * @param {Function} fn Event handler to be called.
+ * @param {Mixed} context Context for function execution.
+ * @param {Boolean} once Only emit once
+ * @api private
+ */
+function EE(fn, context, once) {
+  this.fn = fn;
+  this.context = context;
+  this.once = once || false;
+}
+
+/**
+ * Minimal EventEmitter interface that is molded against the Node.js
+ * EventEmitter interface.
+ *
+ * @constructor
+ * @api public
+ */
+function EventEmitter() { /* Nothing to set */ }
+
+/**
+ * Holds the assigned EventEmitters by name.
+ *
+ * @type {Object}
+ * @private
+ */
+EventEmitter.prototype._events = undefined;
+
+/**
+ * Return a list of assigned event listeners.
+ *
+ * @param {String} event The events that should be listed.
+ * @param {Boolean} exists We only need to know if there are listeners.
+ * @returns {Array|Boolean}
+ * @api public
+ */
+EventEmitter.prototype.listeners = function listeners(event, exists) {
+  var evt = prefix ? prefix + event : event
+    , available = this._events && this._events[evt];
+
+  if (exists) return !!available;
+  if (!available) return [];
+  if (available.fn) return [available.fn];
+
+  for (var i = 0, l = available.length, ee = new Array(l); i < l; i++) {
+    ee[i] = available[i].fn;
+  }
+
+  return ee;
+};
+
+/**
+ * Emit an event to all registered event listeners.
+ *
+ * @param {String} event The name of the event.
+ * @returns {Boolean} Indication if we've emitted an event.
+ * @api public
+ */
+EventEmitter.prototype.emit = function emit(event, a1, a2, a3, a4, a5) {
+  var evt = prefix ? prefix + event : event;
+
+  if (!this._events || !this._events[evt]) return false;
+
+  var listeners = this._events[evt]
+    , len = arguments.length
+    , args
+    , i;
+
+  if ('function' === typeof listeners.fn) {
+    if (listeners.once) this.removeListener(event, listeners.fn, undefined, true);
+
+    switch (len) {
+      case 1: return listeners.fn.call(listeners.context), true;
+      case 2: return listeners.fn.call(listeners.context, a1), true;
+      case 3: return listeners.fn.call(listeners.context, a1, a2), true;
+      case 4: return listeners.fn.call(listeners.context, a1, a2, a3), true;
+      case 5: return listeners.fn.call(listeners.context, a1, a2, a3, a4), true;
+      case 6: return listeners.fn.call(listeners.context, a1, a2, a3, a4, a5), true;
+    }
+
+    for (i = 1, args = new Array(len -1); i < len; i++) {
+      args[i - 1] = arguments[i];
+    }
+
+    listeners.fn.apply(listeners.context, args);
+  } else {
+    var length = listeners.length
+      , j;
+
+    for (i = 0; i < length; i++) {
+      if (listeners[i].once) this.removeListener(event, listeners[i].fn, undefined, true);
+
+      switch (len) {
+        case 1: listeners[i].fn.call(listeners[i].context); break;
+        case 2: listeners[i].fn.call(listeners[i].context, a1); break;
+        case 3: listeners[i].fn.call(listeners[i].context, a1, a2); break;
+        default:
+          if (!args) for (j = 1, args = new Array(len -1); j < len; j++) {
+            args[j - 1] = arguments[j];
+          }
+
+          listeners[i].fn.apply(listeners[i].context, args);
+      }
+    }
+  }
+
+  return true;
+};
+
+/**
+ * Register a new EventListener for the given event.
+ *
+ * @param {String} event Name of the event.
+ * @param {Functon} fn Callback function.
+ * @param {Mixed} context The context of the function.
+ * @api public
+ */
+EventEmitter.prototype.on = function on(event, fn, context) {
+  var listener = new EE(fn, context || this)
+    , evt = prefix ? prefix + event : event;
+
+  if (!this._events) this._events = prefix ? {} : Object.create(null);
+  if (!this._events[evt]) this._events[evt] = listener;
+  else {
+    if (!this._events[evt].fn) this._events[evt].push(listener);
+    else this._events[evt] = [
+      this._events[evt], listener
+    ];
+  }
+
+  return this;
+};
+
+/**
+ * Add an EventListener that's only called once.
+ *
+ * @param {String} event Name of the event.
+ * @param {Function} fn Callback function.
+ * @param {Mixed} context The context of the function.
+ * @api public
+ */
+EventEmitter.prototype.once = function once(event, fn, context) {
+  var listener = new EE(fn, context || this, true)
+    , evt = prefix ? prefix + event : event;
+
+  if (!this._events) this._events = prefix ? {} : Object.create(null);
+  if (!this._events[evt]) this._events[evt] = listener;
+  else {
+    if (!this._events[evt].fn) this._events[evt].push(listener);
+    else this._events[evt] = [
+      this._events[evt], listener
+    ];
+  }
+
+  return this;
+};
+
+/**
+ * Remove event listeners.
+ *
+ * @param {String} event The event we want to remove.
+ * @param {Function} fn The listener that we need to find.
+ * @param {Mixed} context Only remove listeners matching this context.
+ * @param {Boolean} once Only remove once listeners.
+ * @api public
+ */
+EventEmitter.prototype.removeListener = function removeListener(event, fn, context, once) {
+  var evt = prefix ? prefix + event : event;
+
+  if (!this._events || !this._events[evt]) return this;
+
+  var listeners = this._events[evt]
+    , events = [];
+
+  if (fn) {
+    if (listeners.fn) {
+      if (
+           listeners.fn !== fn
+        || (once && !listeners.once)
+        || (context && listeners.context !== context)
+      ) {
+        events.push(listeners);
+      }
+    } else {
+      for (var i = 0, length = listeners.length; i < length; i++) {
+        if (
+             listeners[i].fn !== fn
+          || (once && !listeners[i].once)
+          || (context && listeners[i].context !== context)
+        ) {
+          events.push(listeners[i]);
+        }
+      }
+    }
+  }
+
+  //
+  // Reset the array, or remove it completely if we have no more listeners.
+  //
+  if (events.length) {
+    this._events[evt] = events.length === 1 ? events[0] : events;
+  } else {
+    delete this._events[evt];
+  }
+
+  return this;
+};
+
+/**
+ * Remove all listeners or only the listeners for the specified event.
+ *
+ * @param {String} event The event want to remove all listeners for.
+ * @api public
+ */
+EventEmitter.prototype.removeAllListeners = function removeAllListeners(event) {
+  if (!this._events) return this;
+
+  if (event) delete this._events[prefix ? prefix + event : event];
+  else this._events = prefix ? {} : Object.create(null);
+
+  return this;
+};
+
+//
+// Alias methods names because people roll like that.
+//
+EventEmitter.prototype.off = EventEmitter.prototype.removeListener;
+EventEmitter.prototype.addListener = EventEmitter.prototype.on;
+
+//
+// This function doesn't apply anymore.
+//
+EventEmitter.prototype.setMaxListeners = function setMaxListeners() {
+  return this;
+};
+
+//
+// Expose the prefix.
+//
+EventEmitter.prefixed = prefix;
+
+//
+// Expose the module.
+//
+if ('undefined' !== typeof module) {
+  module.exports = EventEmitter;
+}
+
+},{}],90:[function(require,module,exports){
+arguments[4][27][0].apply(exports,arguments)
+},{"detect-browser":91,"dup":27}],91:[function(require,module,exports){
+arguments[4][29][0].apply(exports,arguments)
+},{"dup":29}],92:[function(require,module,exports){
+
+},{}],93:[function(require,module,exports){
+// Copyright Joyent, Inc. and other Node contributors.
+//
+// Permission is hereby granted, free of charge, to any person obtaining a
+// copy of this software and associated documentation files (the
+// "Software"), to deal in the Software without restriction, including
+// without limitation the rights to use, copy, modify, merge, publish,
+// distribute, sublicense, and/or sell copies of the Software, and to permit
+// persons to whom the Software is furnished to do so, subject to the
+// following conditions:
+//
+// The above copyright notice and this permission notice shall be included
+// in all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+// OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+// MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN
+// NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
+// DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
+// OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE
+// USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+function EventEmitter() {
+  this._events = this._events || {};
+  this._maxListeners = this._maxListeners || undefined;
+}
+module.exports = EventEmitter;
+
+// Backwards-compat with node 0.10.x
+EventEmitter.EventEmitter = EventEmitter;
+
+EventEmitter.prototype._events = undefined;
+EventEmitter.prototype._maxListeners = undefined;
+
+// By default EventEmitters will print a warning if more than 10 listeners are
+// added to it. This is a useful default which helps finding memory leaks.
+EventEmitter.defaultMaxListeners = 10;
+
+// Obviously not all Emitters should be limited to 10. This function allows
+// that to be increased. Set to zero for unlimited.
+EventEmitter.prototype.setMaxListeners = function(n) {
+  if (!isNumber(n) || n < 0 || isNaN(n))
+    throw TypeError('n must be a positive number');
+  this._maxListeners = n;
+  return this;
+};
+
+EventEmitter.prototype.emit = function(type) {
+  var er, handler, len, args, i, listeners;
+
+  if (!this._events)
+    this._events = {};
+
+  // If there is no 'error' event listener then throw.
+  if (type === 'error') {
+    if (!this._events.error ||
+        (isObject(this._events.error) && !this._events.error.length)) {
+      er = arguments[1];
+      if (er instanceof Error) {
+        throw er; // Unhandled 'error' event
+      }
+      throw TypeError('Uncaught, unspecified "error" event.');
+    }
+  }
+
+  handler = this._events[type];
+
+  if (isUndefined(handler))
+    return false;
+
+  if (isFunction(handler)) {
+    switch (arguments.length) {
+      // fast cases
+      case 1:
+        handler.call(this);
+        break;
+      case 2:
+        handler.call(this, arguments[1]);
+        break;
+      case 3:
+        handler.call(this, arguments[1], arguments[2]);
+        break;
+      // slower
+      default:
+        len = arguments.length;
+        args = new Array(len - 1);
+        for (i = 1; i < len; i++)
+          args[i - 1] = arguments[i];
+        handler.apply(this, args);
+    }
+  } else if (isObject(handler)) {
+    len = arguments.length;
+    args = new Array(len - 1);
+    for (i = 1; i < len; i++)
+      args[i - 1] = arguments[i];
+
+    listeners = handler.slice();
+    len = listeners.length;
+    for (i = 0; i < len; i++)
+      listeners[i].apply(this, args);
+  }
+
+  return true;
+};
+
+EventEmitter.prototype.addListener = function(type, listener) {
+  var m;
+
+  if (!isFunction(listener))
+    throw TypeError('listener must be a function');
+
+  if (!this._events)
+    this._events = {};
+
+  // To avoid recursion in the case that type === "newListener"! Before
+  // adding it to the listeners, first emit "newListener".
+  if (this._events.newListener)
+    this.emit('newListener', type,
+              isFunction(listener.listener) ?
+              listener.listener : listener);
+
+  if (!this._events[type])
+    // Optimize the case of one listener. Don't need the extra array object.
+    this._events[type] = listener;
+  else if (isObject(this._events[type]))
+    // If we've already got an array, just append.
+    this._events[type].push(listener);
+  else
+    // Adding the second element, need to change to array.
+    this._events[type] = [this._events[type], listener];
+
+  // Check for listener leak
+  if (isObject(this._events[type]) && !this._events[type].warned) {
+    var m;
+    if (!isUndefined(this._maxListeners)) {
+      m = this._maxListeners;
+    } else {
+      m = EventEmitter.defaultMaxListeners;
+    }
+
+    if (m && m > 0 && this._events[type].length > m) {
+      this._events[type].warned = true;
+      console.error('(node) warning: possible EventEmitter memory ' +
+                    'leak detected. %d listeners added. ' +
+                    'Use emitter.setMaxListeners() to increase limit.',
+                    this._events[type].length);
+      if (typeof console.trace === 'function') {
+        // not supported in IE 10
+        console.trace();
+      }
+    }
+  }
+
+  return this;
+};
+
+EventEmitter.prototype.on = EventEmitter.prototype.addListener;
+
+EventEmitter.prototype.once = function(type, listener) {
+  if (!isFunction(listener))
+    throw TypeError('listener must be a function');
+
+  var fired = false;
+
+  function g() {
+    this.removeListener(type, g);
+
+    if (!fired) {
+      fired = true;
+      listener.apply(this, arguments);
+    }
+  }
+
+  g.listener = listener;
+  this.on(type, g);
+
+  return this;
+};
+
+// emits a 'removeListener' event iff the listener was removed
+EventEmitter.prototype.removeListener = function(type, listener) {
+  var list, position, length, i;
+
+  if (!isFunction(listener))
+    throw TypeError('listener must be a function');
+
+  if (!this._events || !this._events[type])
+    return this;
+
+  list = this._events[type];
+  length = list.length;
+  position = -1;
+
+  if (list === listener ||
+      (isFunction(list.listener) && list.listener === listener)) {
+    delete this._events[type];
+    if (this._events.removeListener)
+      this.emit('removeListener', type, listener);
+
+  } else if (isObject(list)) {
+    for (i = length; i-- > 0;) {
+      if (list[i] === listener ||
+          (list[i].listener && list[i].listener === listener)) {
+        position = i;
+        break;
+      }
+    }
+
+    if (position < 0)
+      return this;
+
+    if (list.length === 1) {
+      list.length = 0;
+      delete this._events[type];
+    } else {
+      list.splice(position, 1);
+    }
+
+    if (this._events.removeListener)
+      this.emit('removeListener', type, listener);
+  }
+
+  return this;
+};
+
+EventEmitter.prototype.removeAllListeners = function(type) {
+  var key, listeners;
+
+  if (!this._events)
+    return this;
+
+  // not listening for removeListener, no need to emit
+  if (!this._events.removeListener) {
+    if (arguments.length === 0)
+      this._events = {};
+    else if (this._events[type])
+      delete this._events[type];
+    return this;
+  }
+
+  // emit removeListener for all listeners on all events
+  if (arguments.length === 0) {
+    for (key in this._events) {
+      if (key === 'removeListener') continue;
+      this.removeAllListeners(key);
+    }
+    this.removeAllListeners('removeListener');
+    this._events = {};
+    return this;
+  }
+
+  listeners = this._events[type];
+
+  if (isFunction(listeners)) {
+    this.removeListener(type, listeners);
+  } else {
+    // LIFO order
+    while (listeners.length)
+      this.removeListener(type, listeners[listeners.length - 1]);
+  }
+  delete this._events[type];
+
+  return this;
+};
+
+EventEmitter.prototype.listeners = function(type) {
+  var ret;
+  if (!this._events || !this._events[type])
+    ret = [];
+  else if (isFunction(this._events[type]))
+    ret = [this._events[type]];
+  else
+    ret = this._events[type].slice();
+  return ret;
+};
+
+EventEmitter.listenerCount = function(emitter, type) {
+  var ret;
+  if (!emitter._events || !emitter._events[type])
+    ret = 0;
+  else if (isFunction(emitter._events[type]))
+    ret = 1;
+  else
+    ret = emitter._events[type].length;
+  return ret;
+};
+
+function isFunction(arg) {
+  return typeof arg === 'function';
+}
+
+function isNumber(arg) {
+  return typeof arg === 'number';
+}
+
+function isObject(arg) {
+  return typeof arg === 'object' && arg !== null;
+}
+
+function isUndefined(arg) {
+  return arg === void 0;
+}
+
+},{}],94:[function(require,module,exports){
+// shim for using process in browser
+
+var process = module.exports = {};
+var queue = [];
+var draining = false;
+var currentQueue;
+var queueIndex = -1;
+
+function cleanUpNextTick() {
+    draining = false;
+    if (currentQueue.length) {
+        queue = currentQueue.concat(queue);
+    } else {
+        queueIndex = -1;
+    }
+    if (queue.length) {
+        drainQueue();
+    }
+}
+
+function drainQueue() {
+    if (draining) {
+        return;
+    }
+    var timeout = setTimeout(cleanUpNextTick);
+    draining = true;
+
+    var len = queue.length;
+    while(len) {
+        currentQueue = queue;
+        queue = [];
+        while (++queueIndex < len) {
+            currentQueue[queueIndex].run();
+        }
+        queueIndex = -1;
+        len = queue.length;
+    }
+    currentQueue = null;
+    draining = false;
+    clearTimeout(timeout);
+}
+
+process.nextTick = function (fun) {
+    var args = new Array(arguments.length - 1);
+    if (arguments.length > 1) {
+        for (var i = 1; i < arguments.length; i++) {
+            args[i - 1] = arguments[i];
+        }
+    }
+    queue.push(new Item(fun, args));
+    if (queue.length === 1 && !draining) {
+        setTimeout(drainQueue, 0);
+    }
+};
+
+// v8 likes predictible objects
+function Item(fun, array) {
+    this.fun = fun;
+    this.array = array;
+}
+Item.prototype.run = function () {
+    this.fun.apply(null, this.array);
+};
+process.title = 'browser';
+process.browser = true;
+process.env = {};
+process.argv = [];
+process.version = ''; // empty string to avoid regexp issues
+process.versions = {};
+
+function noop() {}
+
+process.on = noop;
+process.addListener = noop;
+process.once = noop;
+process.off = noop;
+process.removeListener = noop;
+process.removeAllListeners = noop;
+process.emit = noop;
+
+process.binding = function (name) {
+    throw new Error('process.binding is not supported');
+};
+
+// TODO(shtylman)
+process.cwd = function () { return '/' };
+process.chdir = function (dir) {
+    throw new Error('process.chdir is not supported');
+};
+process.umask = function() { return 0; };
+
+},{}]},{},[1]);
