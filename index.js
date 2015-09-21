@@ -37,7 +37,6 @@ function sendScreen(roomId) {
       getUserMedia(constraints, function(err, stream) {
         if (err) {
           if (screenshare.type === 'mozilla/firefox') {
-            console.log('install firefox');
             var actions = document.getElementById('actions');
             return actions.appendChild(
               h('a', 'Install the Firefox extension', {
