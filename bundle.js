@@ -38,7 +38,6 @@ function sendScreen(roomId) {
       getUserMedia(constraints, function(err, stream) {
         if (err) {
           if (screenshare.type === 'mozilla/firefox') {
-            console.log('install firefox');
             var actions = document.getElementById('actions');
             return actions.appendChild(
               h('a', 'Install the Firefox extension', {
@@ -26703,11 +26702,11 @@ var PRIORITY_WAIT = 1000;
 
 // priority order (lower is better)
 var DEFAULT_PRIORITIES = [
-  'addIceCandidate',
+  'createOffer',
   'setLocalDescription',
-  'setRemoteDescription',
   'createAnswer',
-  'createOffer'
+  'setRemoteDescription',
+  'addIceCandidate'
 ];
 
 // define event mappings
@@ -26782,7 +26781,7 @@ module.exports = function(pc, opts) {
 
   var createSessionDescription = pluggable(plugin && plugin.createSessionDescription, function(data) {
     return new RTCSessionDescription(data);
-  });  
+  });
 
   function abortQueue(err) {
     console.error(err);
@@ -26892,7 +26891,7 @@ module.exports = function(pc, opts) {
     if (VALID_RESPONSE_STATES.indexOf(pc.signalingState) >= 0) {
       return tq.createAnswer();
     }
-  }  
+  }
 
   function emitSdp() {
     tq('sdp.local', pluckSessionDesc(this.args[0]));
@@ -26948,7 +26947,7 @@ module.exports = function(pc, opts) {
       tq.apply(tq, [ ['negotiate', eventName, 'ok'], task.name ].concat(task.args));
       next.apply(null, [null].concat([].slice.call(arguments)));
     }
-  
+
     if (! fn) {
       return next(new Error('cannot call "' + task.name + '" on RTCPeerConnection'));
     }
